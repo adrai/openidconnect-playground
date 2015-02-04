@@ -14,6 +14,8 @@ var
   util = require('util'),
   OAuth2 = require('oauth').OAuth2,
   crypto = require('crypto'),
+  jsjws = require('jsjws'),
+  fs = require('fs'),
   InternalOAuthError = require('./internalOAuthError');
 
 /**
@@ -93,6 +95,17 @@ function Strategy(options, verify) {
   this._authorizationParams = options.authorizationParams || {};
 
   this.oauth2 = new OAuth2(this._clientID,  this._clientSecret, '', this._authorizationURL, this._tokenURL);
+
+  this._keyFile = options.keyFile || null;
+  this.key = null;
+
+  if (this._keyFile) {
+    this.loadKey(this._keyFile);
+  }
+
+  if (!this.key) {
+    console.log('Are you sure to not verify the signature?');
+  }
 }
 
 /**
@@ -100,6 +113,31 @@ function Strategy(options, verify) {
  */
 util.inherits(Strategy, passport.Strategy);
 
+
+Strategy.prototype.loadKey = function(url) {
+  this.key = fs.readFileSync(url, {encoding: 'utf8'});
+  if (this.key.indexOf('-----BEGIN CERTIFICATE-----') >= 0) {
+    this.key = jsjws.X509.getPublicKeyFromCertPEM(this.key);
+  } else {
+    this.key = jsjws.createPublicKey(this.key, 'utf8');
+  }
+};
+
+Strategy.prototype.verifySignature = function (idToken) {
+  var jws = new jsjws.JWS();
+  var err = null;
+  try {
+    if (!jws.verifyJWSByKey(idToken, this.key)) {
+      err = new Error('Signature verification failed');
+    }
+  }
+  catch (e) {
+    err = new Error('Bad signature');
+  }
+  if (err) {
+    throw err;
+  }
+};
 
 Strategy.prototype.authenticate = function(req, options) {
   options = options || {};
@@ -137,6 +175,20 @@ Strategy.prototype.authenticate = function(req, options) {
       var idTokenSegments = idToken.split('.')
         , jwtClaimsStr
         , jwtClaims;
+
+      if (self.key) {
+        var errored = false;
+        try {
+          self.verifySignature(idToken);
+        }
+        catch (e) {
+          self.error(e);
+          errored = true;
+        }
+        if (errored) {
+          return;
+        }
+      }
 
       try {
         jwtClaimsStr = new Buffer(idTokenSegments[1], 'base64').toString();

@@ -71,8 +71,8 @@ var strat = new OpenIDConnectStrategy({
 
   userInfoURL:      'http://localhost:3000/userinfo',
 
-  verifyTokenURL:   'http://localhost:3000/token/verify',
-  //verifyTokenURL:   'https://kbrs105217/token/verify',
+  keyFile: __dirname + '/../anvil/keys/public.pem',
+  //keyFile: __dirname + '/nevis.pem',
 
   clientID:         '110bb6e0-0bda-44f9-a724-dbe55176b8c0',
   //clientID:         'kabaten',
@@ -108,14 +108,6 @@ passport.use(strat);
 
 server.get('/', function (req, res) {
   if (req.user) {
-
-    strat.verifyAccessToken(currentAccessToken, function (err) {
-      if (err) {
-        return console.log(err);
-      }
-      console.log('access token is valid');
-    });
-
     if (!req.user.email) {
       return res.send('Logged in as ' + req.user.id + '. <a href="/signout">Signout</a>');
     }
