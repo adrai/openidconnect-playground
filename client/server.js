@@ -87,7 +87,7 @@ var strat = new OpenIDConnectStrategy({
   skipUserProfile:  false,
 
   authorizationParams: {}
-  //authorizationParams: { claims: '{"id_token":{"name":null,"given_name":null,"family_name":null,"email":null,"gender":null,"birthdate":null,"locale":null,"phone_number":null}}' }
+  //authorizationParams: { claims: '{"id_token":{"updated_at":null,"name":null,"given_name":null,"family_name":null,"email":null,"gender":null,"birthdate":null,"locale":null,"phone_number":null}}' }
 }, function (iss, sub, profile, jwtClaims, accessToken, refreshToken, params, done) {
 
   profile = profile._json;
