@@ -247,7 +247,7 @@ Strategy.prototype._loadUserProfile = function(load, jwtClaims, callback) {
   var profile;
 
   if (load) {
-    var parsed = url.parse(self._userInfoURL, true);
+    var parsed = url.parse(this._userInfoURL, true);
     parsed.query['schema'] = 'openid';
     delete parsed.search;
     var userInfoURL = url.format(parsed);
@@ -263,7 +263,7 @@ Strategy.prototype._loadUserProfile = function(load, jwtClaims, callback) {
     //       around this issue.
 
     //oauth2.get(userInfoURL, accessToken, function (err, body, res) {
-    self.oauth2._request("GET", userInfoURL, { 'Authorization': "Bearer " + accessToken, 'Accept': "application/json" }, null, null, function (err, body, res) {
+    this.oauth2._request("GET", userInfoURL, { 'Authorization': "Bearer " + accessToken, 'Accept': "application/json" }, null, null, function (err, body, res) {
       if (err) { return self.error(new InternalOAuthError('failed to fetch user profile', err)); }
 
       profile = {};

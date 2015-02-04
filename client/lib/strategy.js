@@ -1,8 +1,10 @@
 /**
  * Module dependencies.
  */
-var util = require('util')
-  , OpenIDConnectStrategy = require('./openidconnectStrategy');
+var
+  url = require('url'),
+  util = require('util'),
+  OpenIDConnectStrategy = require('./openidconnectStrategy');
 
 
 /**
@@ -51,7 +53,7 @@ function Strategy(options, verify) {
   OpenIDConnectStrategy.call(this, options, verify);
   this.name = 'openidconnect';
 
-  // this._oauth2.setAccessTokenName("oauth_token");
+  this._verifyTokenURL = options.verifyTokenURL;
 }
 
 /**
@@ -63,6 +65,18 @@ Strategy.prototype.userProfile = function (accessToken, callback) {
   this._loadUserProfile(accessToken, callback);
 };
 
+Strategy.prototype.verifyAccessToken = function (accessToken, callback) {
+  var parsed = url.parse(this._verifyTokenURL, true);
+  parsed.query['schema'] = 'openid';
+  delete parsed.search;
+  var verifyTokenURL = url.format(parsed);
+
+  var queryParams = require('querystring').stringify({ 'client_id': this._clientID, 'client_secret': this._clientSecret });
+  this.oauth2._request("POST", verifyTokenURL, { 'Content-Type': 'application/x-www-form-urlencoded' }, queryParams, accessToken, function (err, body, res) {
+    if (err) { return callback(new Error('failed to verify access token', err)); }
+    callback(null);
+  });
+};
 
 /**
  * Expose `Strategy`.
