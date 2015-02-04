@@ -3,18 +3,16 @@
  */
 
 var fs                    = require('fs')
-  , redis                 = require('redis')
-  , client                = redis.createClient()
   , express               = require('express')
   , server                = express()
   , passport              = require('passport')
   // , OpenIDConnectStrategy = require('passport-openidconnect').Strategy
-  , OpenIDConnectStrategy = require('./strategy')
+  , OpenIDConnectStrategy = require('./lib/strategy')
   , cookieParser          = require('cookie-parser')
   , bodyParser            = require('body-parser')
   , session               = require('express-session')
-  , RedisStore            = require('connect-redis')(session)
-  , sessionStore          = new RedisStore({ client: client })
+  , MemoryStore           = session.MemoryStore
+  , sessionStore          = new MemoryStore()
   ;
 
 
@@ -26,8 +24,9 @@ var fs                    = require('fs')
 server.use(cookieParser('secret'));
 server.use(bodyParser());
 server.use(session({
-  store:   sessionStore,
-  secret: 'othersecret'
+  store: sessionStore,
+  secret: 'secret',
+  key: 'express.sid'
 }));
 server.use(passport.initialize());
 server.use(passport.session());
@@ -42,12 +41,12 @@ var users = {};
  */
 
 passport.serializeUser(function (user, done) {
-  done(null, user.id);
+  done(null, user);
 });
 
 
-passport.deserializeUser(function (id, done) {
-  done(null, users[id] || null);
+passport.deserializeUser(function (user, done) {
+  done(null, users[user.id] || null);
 });
 
 
@@ -57,18 +56,42 @@ passport.deserializeUser(function (id, done) {
 
 var currentAccessToken;
 
+// only for testing
+process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
+
+var logoutUrl = 'http://localhost:3000/signout?redirect_uri=http://localhost:3001';
+//var logoutUrl = 'https://kbrs105217/ten/authorize?logout&redirect_uri=http://localhost:3001';
+
 var strat = new OpenIDConnectStrategy({
   authorizationURL: 'http://localhost:3000/authorize',
-  tokenURL:         'http://localhost:3000/token',
-  userInfoURL:      'http://localhost:3000/userinfo',
-  clientID:         '110bb6e0-0bda-44f9-a724-dbe55176b8c0',
-  clientSecret:     '123456789',
-  callbackURL:      'http://localhost:3001/callback',
-  scope:            ['profile']
+  //authorizationURL: 'https://kbrs105217/ten/authorize',
 
+  tokenURL:         'http://localhost:3000/token',
+  //tokenURL:         'https://kbrs105217/ten/authorize',
+
+  userInfoURL:      'http://localhost:3000/userinfo',
+
+  clientID:         '110bb6e0-0bda-44f9-a724-dbe55176b8c0',
+  //clientID:         'kabaten',
+
+  clientSecret:     '123456789',
+  //clientSecret:     'kabaTEN',
+
+  callbackURL:      'http://localhost:3001/callback',
+  scope:            ['profile'],
+
+  //skipUserProfile:  true,
+  skipUserProfile:  false,
+
+  authorizationParams: {}
+  //authorizationParams: { claims: '{"id_token":{"name":null,"given_name":null,"family_name":null,"email":null,"gender":null,"birthdate":null,"locale":null,"phone_number":null}}' }
 }, function (iss, sub, profile, jwtClaims, accessToken, refreshToken, params, done) {
+
+  profile = profile._json;
+
   // store the user
   users[sub] = profile;
+
   currentAccessToken = accessToken;
   done(null, profile);
 });
@@ -82,10 +105,14 @@ passport.use(strat);
 
 server.get('/', function (req, res) {
   if (req.user) {
-    strat.userProfile(currentAccessToken, function (err, profile) {
-      console.log(arguments);
-    });
-    res.send('Logged in as ' + req.user._json.email + '. <a href="/signout">Signout</a>');
+    //strat.userProfile(currentAccessToken, function (err, profile) {
+    //  console.log(arguments);
+    //});
+    if (!req.user.email) {
+      return res.send('Logged in as ' + req.user.id + '. <a href="/signout">Signout</a>');
+    }
+
+    res.send('Logged in as ' + req.user.given_name + ' ' + req.user.family_name + ' (' + req.user.email + '). <a href="/signout">Signout</a>');
   } else {
     res.send('<a href="/signin">Signin</a>');
   }
@@ -103,7 +130,7 @@ server.get('/signin', passport.authenticate('openidconnect'));
 
 server.get('/signout', function (req, res, next) {
   req.logout();
-  res.redirect('/');
+  res.redirect(logoutUrl);
 });
 
 /**
@@ -120,9 +147,9 @@ server.get('/callback', passport.authenticate('openidconnect', {
  */
 
 server.use(function (err, req, res, next) {
-  console.log('ERROR', err)
+  console.log('ERROR', err);
   res.json(err);
-})
+});
 
 
 /**

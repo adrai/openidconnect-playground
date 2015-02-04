@@ -2,8 +2,7 @@
  * Module dependencies.
  */
 var util = require('util')
-  , OpenIDConnectStrategy = require('passport-openidconnect').Strategy
-  , OAuth2 = require('oauth').OAuth2;
+  , OpenIDConnectStrategy = require('./openidconnectStrategy');
 
 
 /**
@@ -61,45 +60,7 @@ function Strategy(options, verify) {
 util.inherits(Strategy, OpenIDConnectStrategy);
 
 Strategy.prototype.userProfile = function (accessToken, callback) {
-  var self = this;
-  var oauth2 = new OAuth2(this._clientID,  this._clientSecret,
-                            '', this._authorizationURL, this._tokenURL);
-  oauth2._request("GET", this._userInfoURL, { 'Authorization': "Bearer " + accessToken, 'Accept': "application/json" }, null, null, function (err, body, res) {
-    if (err) {
-      return callback(err);
-    }
-    
-    console.log('PROFILE');
-    console.log(body);
-    console.log('-------');
-    
-    var profile = {};
-    
-    try {
-      var json = JSON.parse(body);
-      
-      profile.id = json.sub;
-      // Prior to OpenID Connect Basic Client Profile 1.0 - draft 22, the
-      // "sub" key was named "user_id".  Many providers still use the old
-      // key, so fallback to that.
-      if (!profile.id) {
-        profile.id = json.user_id;
-      }
-      
-      profile.displayName = json.name;
-      profile.name = { familyName: json.family_name,
-                       givenName: json.given_name,
-                       middleName: json.middle_name };
-      
-      profile._raw = body;
-      profile._json = json;
-      
-      callback(null, profile);
-    } catch(e) {
-      self.error(e);
-      return callback(e);
-    }
-  });
+  this._loadUserProfile(accessToken, callback);
 };
 
 
@@ -107,3 +68,15 @@ Strategy.prototype.userProfile = function (accessToken, callback) {
  * Expose `Strategy`.
  */
 module.exports = Strategy;
+
+
+
+
+
+
+
+
+
+
+
+
