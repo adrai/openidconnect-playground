@@ -1,20 +1,8 @@
 {
   "issuer": "https://your.authorization.server",
   "client_registration": "scoped",
-  "providers": {
-    "google": {
-      "clientID": "CLIENT_ID",
-      "clientSecret": "CLIENT_SECRET",
-      "callbackURL": "https://YOUR.AUTH.SERVER/connect/google/callback",
-      "passReqToCallback": true,
-      "scope": [
-        "https://www.googleapis.com/auth/userinfo.profile",
-        "https://www.googleapis.com/auth/userinfo.email"
-      ]
-    }
-  },
-  "cookie_secret": "a9947fc914d1a25ae25f",
-  "session_secret": "fb9553b3698439526d10",
+  "cookie_secret": "595861a1e9530a6c5a99",
+  "session_secret": "e04d068f6e3e4a66ebe5",
   "redis": {
     "url": "redis://HOST:PORT",
     "auth": "PASSWORD"

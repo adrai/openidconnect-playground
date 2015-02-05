@@ -1,41 +1,21 @@
-// /**
-//  * Dependencies
-//  */
+var fs = require('fs');
 
-// var cluster = require('cluster')
-//   , os = require('os')
-//   ;
+var config = 'development';
+if (process.env.NODE_ENV === 'production') {
+  config = 'production';
+}
 
+var configFile = './config.' + config + '.json';
 
-// /**
-//  * Fork the process for the number of CPUs available
-//  */
+var configJSON = require(configFile);
 
-// if (cluster.isMaster) {
-//   var cpus = os.cpus().length;
-//   console.log('Starting %s workers', cpus);
-//   for (var i = 0; i < cpus; i += 1) {
-//     cluster.fork();
-//   }
-// }
+configJSON.redis.url = 'redis://localhost:6379';
+configJSON.redis.auth = null;
+
+fs.writeFileSync(configFile, JSON.stringify(configJSON, null, 2));
 
 
-// /**
-//  * Start the server in a worker
-//  */
 
-// else {
-//   require('anvil-connect').start();
-// }
-
-
-// /**
-//  * Replace dead workers
-//  */
-
-// cluster.on('exit', function (worker) {
-//   cluster.fork();
-// });
 
 var server = require('anvil-connect');
 

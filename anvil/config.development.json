@@ -2,5 +2,9 @@
   "issuer": "http://localhost:3000",
   "client_registration": "scoped",
   "cookie_secret": "595861a1e9530a6c5a99",
-  "session_secret": "e04d068f6e3e4a66ebe5"
+  "session_secret": "e04d068f6e3e4a66ebe5",
+  "redis": {
+    "url": "redis://localhost:6379",
+    "auth": null
+  }
 }
