@@ -81,13 +81,9 @@ var strat = new OpenIDConnectStrategy({
   //clientSecret:     'kabaTEN',
 
   callbackURL:      'http://localhost:3001/callback',
-  scope:            ['profile'],
 
   //skipUserProfile:  true,
-  skipUserProfile:  false,
-
-  authorizationParams: {}
-  //authorizationParams: { claims: '{"id_token":{"updated_at":null,"name":null,"given_name":null,"family_name":null,"email":null,"gender":null,"birthdate":null,"locale":null,"phone_number":null}}' }
+  skipUserProfile:  false
 }, function (iss, sub, profile, jwtClaims, idToken, accessToken, refreshToken, params, done) {
 
   console.log('idToken to pass to DAAL: ' + idToken);

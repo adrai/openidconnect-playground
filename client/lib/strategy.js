@@ -50,6 +50,9 @@ function Strategy(options, verify) {
   if (!options.clientID) throw new Error('OpenIDConnectStrategy requires a clientID option');
   if (!options.clientSecret) throw new Error('OpenIDConnectStrategy requires a clientSecret option');
 
+  options.authorizationParams = { claims: '{"id_token":{"updated_at":null,"name":null,"given_name":null,"family_name":null,"email":null,"gender":null,"birthdate":null,"locale":null,"phone_number":null}}' };
+  options.scope = ['profile'];
+
   OpenIDConnectStrategy.call(this, options, verify);
   this.name = 'openidconnect';
 
