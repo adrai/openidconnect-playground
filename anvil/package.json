@@ -11,6 +11,6 @@
     "node": ">=0.10.28"
   },
   "dependencies": {
-    "anvil-connect": "0.1.26"
+    "anvil-connect": "KABA-CCEAC/anvil-connect"
   }
 }
