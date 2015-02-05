@@ -136,7 +136,8 @@ server.get('/signout', function (req, res, next) {
  */
 
 server.get('/callback', passport.authenticate('openidconnect', {
-  successRedirect: '/'
+  successRedirect: '/',
+  failureRedirect: '/fail'
 }));
 
 
@@ -169,6 +170,7 @@ server.get('/callback/invited/:isNewOrExisting/:invitationCode', function (req, 
   var invitaionCode = req.params.invitationCode;
 
   passport.authenticate('openidconnect', {
+    failureRedirect: '/fail',
     successRedirect: 'http://localhost:3001/success/invited/' + isNewOrExisting + '/' + invitaionCode,
     callbackURL: 'http://localhost:3001/callback/invited/' + isNewOrExisting + '/' + invitaionCode
   })(req, res);
