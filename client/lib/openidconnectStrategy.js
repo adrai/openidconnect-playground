@@ -222,7 +222,9 @@ Strategy.prototype.authenticate = function(req, options) {
 
           if (self._passReqToCallback) {
             var arity = self._verify.length;
-            if (arity == 9) {
+            if (arity == 10) {
+              self._verify(req, iss, sub, profile, jwtClaims, idToken, accessToken, refreshToken, params, verified);
+            } else if (arity == 9) {
               self._verify(req, iss, sub, profile, jwtClaims, accessToken, refreshToken, params, verified);
             } else if (arity == 8) {
               self._verify(req, iss, sub, profile, accessToken, refreshToken, params, verified);
@@ -235,7 +237,9 @@ Strategy.prototype.authenticate = function(req, options) {
             }
           } else {
             var arity = self._verify.length;
-            if (arity == 8) {
+            if (arity == 9) {
+              self._verify(iss, sub, profile, jwtClaims, idToken, accessToken, refreshToken, params, verified);
+            } else if (arity == 8) {
               self._verify(iss, sub, profile, jwtClaims, accessToken, refreshToken, params, verified);
             } else if (arity == 7) {
               self._verify(iss, sub, profile, accessToken, refreshToken, params, verified);

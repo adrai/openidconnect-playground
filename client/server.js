@@ -88,7 +88,9 @@ var strat = new OpenIDConnectStrategy({
 
   authorizationParams: {}
   //authorizationParams: { claims: '{"id_token":{"updated_at":null,"name":null,"given_name":null,"family_name":null,"email":null,"gender":null,"birthdate":null,"locale":null,"phone_number":null}}' }
-}, function (iss, sub, profile, jwtClaims, accessToken, refreshToken, params, done) {
+}, function (iss, sub, profile, jwtClaims, idToken, accessToken, refreshToken, params, done) {
+
+  console.log('idToken to pass to DAAL: ' + idToken);
 
   profile = profile._json;
 
