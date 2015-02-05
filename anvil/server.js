@@ -37,4 +37,21 @@
 //   cluster.fork();
 // });
 
-require('anvil-connect').start();
+var server = require('anvil-connect');
+
+var justToTest;
+
+server.post('/invitation', function (req, res) {
+  var email = req.body.email;
+  var newRegistrationLandingURL = req.body.newRegistrationLandingURL;
+  var knownUserLandingURL = req.body.knownUserLandingURL;
+  justToTest = knownUserLandingURL;
+  console.log('go to http://localhost:3000/login/invitation/mygeneratedcode');
+  res.end();
+});
+
+server.get('/login/invitation/:code', function (req, res) {
+  res.redirect(justToTest);
+});
+
+server.start();

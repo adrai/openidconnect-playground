@@ -206,7 +206,7 @@ Strategy.prototype.authenticate = function(req, options) {
         sub = jwtClaims.user_id;
       }
 
-      // TODO: Ensure claims are validated per:
+      // NOTE: Ensure claims are validated per:
       //       http://openid.net/specs/openid-connect-basic-1_0.html#id_token
 
 

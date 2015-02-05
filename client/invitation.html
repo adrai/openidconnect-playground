@@ -1,0 +1,76 @@
+<html><head>
+    <title>KABA TEN Invitation Sample</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <script type="text/javascript">
+        function invokeNevisAuthRestService() {
+            var email = document.getElementById("emailId");
+            var types = document.getElementsByName("userType");
+            var type;
+            for(var i = 0; i < types.length; i++) {
+                if(types[i].checked == true) {
+                    type = types[i].value;
+                }
+            }
+            var langs = document.getElementsByName("language");
+            var lang;
+            for(var i = 0; i < langs.length; i++) {
+                if(langs[i].checked == true) {
+                    lang = langs[i].value;
+                }
+            }
+            var url1 = document.getElementById("newRegistrationLandingURLId");
+            var url2 = document.getElementById("knownUserLandingURLId");
+            //var msg = document.getElementById("messageId");
+//     var xml = "<invitationRequest email='" + email.value + "' newRegistrationLandingURL='" + url1.value + "' knownUserLandingURL='" + url2.value + "' userType='" + type + "' language='" + lang + "' message='" + msg.value + "' />";
+//     console.log(xml);
+            var json = "{ \"email\":\"" + email.value + "\", \"newRegistrationLandingURL\":\"" + url1.value + "\", \"knownUserLandingURL\":\"" + url2.value + "\", \"userType\":\"" + type + "\", \"language\":\"" + lang + "\" }";
+            console.log(json);
+            var xhr = new XMLHttpRequest();
+            var srvUrl = document.getElementById("serviceUrlId");
+            xhr.open('POST',srvUrl.value, true);
+            xhr.setRequestHeader('Content-type','application/json');
+            //xhr.setRequestHeader('Accept','text/xml');
+            xhr.send(json);
+        }
+    </script>
+</head>
+<body>
+<h1>KABA TEN Person Invitation</h1>
+<table>
+    <tbody>
+    <tr>
+        <td align="right"><label>Email address</label></td>
+        <td><input type="text" name="email" id="emailId" size="50"></td>
+        <td contenteditable="false">john.doe@foo.com</td>
+    </tr>
+    <tr>
+        <td align="right">User type</td>
+        <td><input id="userTypeId" type="radio" name="userType" value="Employee">Employee<input type="radio" name="userType" value="Fachpartner">Fachpartner<input type="radio" name="userType" value="Customer">Customer</td>
+    </tr>
+    <tr>
+        <td align="right">Language</td>
+        <td><input id="languageId" type="radio" name="language" value="de">DE<input type="radio" name="language" value="fr">FR<input type="radio" name="language" value="it">IT<input type="radio" name="language" value="en">EN<input type="radio" name="language" value="es">ES</td>
+    </tr>
+    <tr>
+        <td align="right"><label>URL for newly registered users</label></td>
+        <td><input type="text" name="newRegistrationLandingURL" id="newRegistrationLandingURLId" size="50" value="http://localhost:3001/invitation/existing/code"></td>
+        <td contenteditable="false">https://kaba.com/foo1</td>
+    </tr>
+    <tr>
+        <td align="right"><label>URL for already registered
+            users</label></td>
+        <td><input type="text" name="knownUserLandingURL" id="knownUserLandingURLId" size="50" value="http://localhost:3001/invitation/new/code"></td>
+        <td contenteditable="false">https://kaba.com/foo2</td>
+    </tr>
+    <tr>
+        <td colspan="2"><hr></td>
+    </tr>
+    <tr>
+        <td align="right"><label>REST service endpoint</label></td>
+        <td><input type="text" name="serviceUrl" id="serviceUrlId" size="50" value="http://kbrs105217:18991/nevisauth/invitation"></td>
+        <td align="left"><button onclick="invokeNevisAuthRestService()">invite</button></td>
+    </tr>
+    </tbody>
+</table>
+
+</body></html>

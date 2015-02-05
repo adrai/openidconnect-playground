@@ -152,6 +152,57 @@ server.use(function (err, req, res, next) {
 });
 
 
+
+server.get('/invite', function (req, res) {
+  res.sendFile(__dirname + '/invitation.html');
+});
+
+server.get('/invitation/:isNewOrExisting/:invitationCode', function (req, res, next) {
+  var isNewOrExisting = req.params.isNewOrExisting;
+  var invitaionCode = req.params.invitationCode;
+
+  passport.authenticate('openidconnect', {
+    callbackURL: 'http://localhost:3001/callback/invited/' + isNewOrExisting + '/' + invitaionCode
+  })(req, res);
+});
+
+server.get('/callback/invited/:isNewOrExisting/:invitationCode', function (req, res, next) {
+  var isNewOrExisting = req.params.isNewOrExisting;
+  var invitaionCode = req.params.invitationCode;
+
+  passport.authenticate('openidconnect', {
+    successRedirect: 'http://localhost:3001/success/invited/' + isNewOrExisting + '/' + invitaionCode,
+    callbackURL: 'http://localhost:3001/callback/invited/' + isNewOrExisting + '/' + invitaionCode
+  })(req, res);
+});
+
+server.get('/success/invited/:isNewOrExisting/:invitationCode', function (req, res, next) {
+  var isNew = req.params.isNewOrExisting === 'new';
+  var invitaionCode = req.params.invitationCode;
+
+  console.log(req.params);
+  console.log(req.user);
+
+  if (isNew) {
+    console.log('invited new user');
+  } else {
+    console.log('invited existing user');
+  }
+
+  console.log('map user=' + req.user.id + ' to invitationCode=' + invitaionCode);
+
+  res.redirect('/');
+});
+
+
+server.get('/invitation/:isNewOrExisting/:invitationCode', function (req, res, next) {
+  var isNewOrExisting = req.params.isNewOrExisting;
+  var invitaionCode = req.params.invitationCode;
+
+  passport.authenticate('openidconnect', { callbackURL: 'http://localhost:3001/callback/invited/' + isNewOrExisting + '/' + invitaionCode })(req, res, next);
+});
+
+
 /**
  * Start the server
  */
