@@ -2,7 +2,7 @@ var exec = require('child_process').exec,
   async = require('async');
 
 var client = {
-  redirect_uris: [ 'http://localhost:3001/*' ],
+  redirect_uris: [ 'http://localhost:3001/callback' ],
   application_type: 'web',
   client_name: 'taibika-customer-app',
   token_endpoint_auth_method: 'client_secret_basic',

@@ -160,7 +160,7 @@ Strategy.prototype.authenticate = function(req, options) {
   if (req.query && req.query.code) {
     var code = req.query.code;
 
-    this.oauth2.getOAuthAccessToken(code, { grant_type: 'authorization_code', redirect_uri: callbackURL }, function(err, accessToken, refreshToken, params) {
+    this.oauth2.getOAuthAccessToken(code, { grant_type: 'authorization_code', redirect_uri: callbackURL, state: options.state || undefined }, function(err, accessToken, refreshToken, params) {
       if (err) { return self.error(new InternalOAuthError('failed to obtain access token', err)); }
 
       //console.log('TOKEN');
@@ -275,10 +275,7 @@ Strategy.prototype.authenticate = function(req, options) {
       params.scope = 'openid';
     }
 
-    //var state = options.state;
-    //if (state) { params.state = state; }
-
-    var state = uid(16);
+    params.state = options.state || undefined;
 
     var location = this._authorizationURL + '?' + querystring.stringify(params);
     this.redirect(location);

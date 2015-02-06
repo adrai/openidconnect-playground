@@ -54,7 +54,6 @@ passport.deserializeUser(function (user, done) {
  * Passport OpenID Connect Strategy
  */
 
-var currentAccessToken;
 
 // only for testing
 process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
@@ -93,7 +92,11 @@ var strat = new OpenIDConnectStrategy({
   // store the user
   users[sub] = profile;
 
-  currentAccessToken = accessToken;
+  var invitationCode = params.state;
+  if (invitationCode) {
+    console.log('map user=' + profile.id + ' to invitationCode=' + invitationCode);
+  }
+
   done(null, profile);
 });
 
@@ -135,10 +138,18 @@ server.get('/signout', function (req, res, next) {
  * Handle Anvil Connect Auth Flow Response
  */
 
-server.get('/callback', passport.authenticate('openidconnect', {
-  successRedirect: '/',
-  failureRedirect: '/fail'
-}));
+//server.get('/callback', passport.authenticate('openidconnect', {
+//  successRedirect: '/',
+//  failureRedirect: '/fail'
+//}));
+
+server.get('/callback', function (req, res, next) {
+  passport.authenticate('openidconnect', {
+    successRedirect: '/',
+    failureRedirect: '/fail',
+    state: req.query.state
+  })(req, res, next);
+});
 
 
 /**
@@ -147,6 +158,7 @@ server.get('/callback', passport.authenticate('openidconnect', {
 
 server.use(function (err, req, res, next) {
   console.log('ERROR', err);
+  console.log(err.stack);
   res.json(err);
 });
 
@@ -160,47 +172,41 @@ server.get('/invitation/:isNewOrExisting/:invitationCode', function (req, res, n
   var isNewOrExisting = req.params.isNewOrExisting;
   var invitaionCode = req.params.invitationCode;
 
+  //passport.authenticate('openidconnect', {
+  //  callbackURL: 'http://localhost:3001/callback/invited/' + isNewOrExisting + '/' + invitaionCode
+  //})(req, res);
+
   passport.authenticate('openidconnect', {
-    callbackURL: 'http://localhost:3001/callback/invited/' + isNewOrExisting + '/' + invitaionCode
+    state: invitaionCode
   })(req, res);
 });
 
-server.get('/callback/invited/:isNewOrExisting/:invitationCode', function (req, res, next) {
-  var isNewOrExisting = req.params.isNewOrExisting;
-  var invitaionCode = req.params.invitationCode;
+//server.get('/callback/invited/:isNewOrExisting/:invitationCode', function (req, res, next) {
+//  var isNewOrExisting = req.params.isNewOrExisting;
+//  var invitaionCode = req.params.invitationCode;
+//
+//  passport.authenticate('openidconnect', {
+//    failureRedirect: '/fail',
+//    successRedirect: 'http://localhost:3001/success/invited/' + isNewOrExisting + '/' + invitaionCode,
+//    callbackURL: 'http://localhost:3001/callback/invited/' + isNewOrExisting + '/' + invitaionCode,
+//    state: req.query.state
+//  })(req, res);
+//});
 
-  passport.authenticate('openidconnect', {
-    failureRedirect: '/fail',
-    successRedirect: 'http://localhost:3001/success/invited/' + isNewOrExisting + '/' + invitaionCode,
-    callbackURL: 'http://localhost:3001/callback/invited/' + isNewOrExisting + '/' + invitaionCode
-  })(req, res);
-});
-
-server.get('/success/invited/:isNewOrExisting/:invitationCode', function (req, res, next) {
-  var isNew = req.params.isNewOrExisting === 'new';
-  var invitaionCode = req.params.invitationCode;
-
-  console.log(req.params);
-  console.log(req.user);
-
-  if (isNew) {
-    console.log('invited new user');
-  } else {
-    console.log('invited existing user');
-  }
-
-  console.log('map user=' + req.user.id + ' to invitationCode=' + invitaionCode);
-
-  res.redirect('/');
-});
-
-
-server.get('/invitation/:isNewOrExisting/:invitationCode', function (req, res, next) {
-  var isNewOrExisting = req.params.isNewOrExisting;
-  var invitaionCode = req.params.invitationCode;
-
-  passport.authenticate('openidconnect', { callbackURL: 'http://localhost:3001/callback/invited/' + isNewOrExisting + '/' + invitaionCode })(req, res, next);
-});
+//server.get('/success/invited/:isNewOrExisting/:invitationCode', function (req, res, next) {
+//  var isNew = req.params.isNewOrExisting === 'new';
+//  var invitaionCode = req.params.invitationCode;
+//
+//  if (isNew) {
+//    console.log('invited new user');
+//  } else {
+//    console.log('invited existing user');
+//  }
+//
+//  console.log('map user=' + req.user.id + ' to invitationCode=' + invitaionCode);
+//
+//  res.redirect('/');
+//});
 
 
 /**
