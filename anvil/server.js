@@ -1,35 +1,27 @@
-var fs = require('fs');
+var init = require('./init');
+var settings = require('./settings');
 
-var config = 'development';
-if (process.env.NODE_ENV === 'production') {
-  config = 'production';
-}
+settings();
+init(function (err) {
+  if (err) {
+    return console.log(err);
+  }
 
-var configFile = './config.' + config + '.json';
+  var server = require('anvil-connect');
 
-var configJSON = require(configFile);
+  server.post('/invitation', function (req, res) {
+     var email = req.body.email;
+     var newRegistrationLandingURL = req.body.newRegistrationLandingURL;
+     var knownUserLandingURL = req.body.knownUserLandingURL;
+     console.log('go to http://localhost:3000/invitation/mygeneratedcode');
+     res.end();
+  });
 
-configJSON.redis.url = 'redis://localhost:6379';
-configJSON.redis.auth = null;
+  server.get('/invitation/:code', function (req, res) {
+     console.log(req.params);
+     res.redirect('http://localhost:3001/invitation/new/othercode');
+  });
 
-fs.writeFileSync(configFile, JSON.stringify(configJSON, null, 2));
+  server.start();
 
-
-
-
-var server = require('anvil-connect');
-
-server.post('/invitation', function (req, res) {
-   var email = req.body.email;
-   var newRegistrationLandingURL = req.body.newRegistrationLandingURL;
-   var knownUserLandingURL = req.body.knownUserLandingURL;
-   console.log('go to http://localhost:3000/invitation/mygeneratedcode');
-   res.end();
 });
-
-server.get('/invitation/:code', function (req, res) {
-   console.log(req.params);
-   res.redirect('http://localhost:3001/invitation/new/othercode');
-});
-
-server.start();

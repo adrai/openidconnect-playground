@@ -4,7 +4,6 @@ execute setup scripts:
 
     $ "cd anvil && npm install"
     $ "cd client && npm install"
-    $ ./anvil/taibika-setup.sh
 
 start anvil server:
 
