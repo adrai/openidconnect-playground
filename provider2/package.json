@@ -1,0 +1,54 @@
+{
+  "name": "openid-connect",
+  "version": "1.2.2",
+  "keywords": [
+    "oauth",
+    "oauth2",
+    "oauth2 server",
+    "oauth2 provider",
+    "openid server",
+    "identity provider",
+    "server",
+    "openid",
+    "connect",
+    "openid connect"
+  ],
+  "description": "This is an fully functional OAuth 2 server implementation, with support for OpenID Connect specification. Based on https://github.com/ammmir/node-oauth2-provider.",
+  "homepage": "https://github.com/agmoyano/OpenIDConnect",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agmoyano/OpenIDConnect.git"
+  },
+  "author": {
+    "name": "Agustín Moyano"
+  },
+  "main": "index",
+  "dependencies": {
+    "express": "< 4.0.0",
+    "express-session": "*",
+    "connect-redis": "*",
+    "extend": "*",
+    "morgan": "*",
+    "body-parser": "*",
+    "method-override": "*",
+    "cookie-parser": "*",
+    "errorhandler": "*",
+    "extend": "1.1.3",
+    "sails-redis": "balderdashy/sails-redis",
+    "modelling": "*",
+    "q": "0.9.6",
+    "jwt-simple": "0.1.0",
+    "lodash": "*",
+    "base64url": "*",
+    "clean-obj": "*"
+  },
+  "directories": {
+    "example": "./examples"
+  },
+  "licenses": [
+    {
+      "type": "MIT",
+      "url": "https://github.com/ammmir/node-oauth2-provider/blob/master/LICENSE"
+    }
+  ]
+}
