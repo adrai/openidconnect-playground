@@ -70,13 +70,15 @@ var strat = new OpenIDConnectStrategy({
 
   userInfoURL:      'http://localhost:3000/userinfo',
 
-  keyFile: __dirname + '/../anvil/keys/public.pem',
+  //keyFile: __dirname + '/../anvil/keys/public.pem',
   //keyFile: __dirname + '/nevis.pem',
 
-  clientID:         '110bb6e0-0bda-44f9-a724-dbe55176b8c0',
+  clientID: 'ad733e4d4474b6babcda09b0f3b43973',
+  // clientID:         '110bb6e0-0bda-44f9-a724-dbe55176b8c0',
   //clientID:         'kabaten',
 
-  clientSecret:     '123456789',
+  clientSecret: 'c5f291aa6db7f4d6ca0bee566a19ab3a',
+  // clientSecret:     '123456789',
   //clientSecret:     'kabaTEN',
 
   callbackURL:      'http://localhost:3001/callback',
