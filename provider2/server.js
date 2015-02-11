@@ -214,40 +214,40 @@ app.get('/client/register', oidc.use('client'), function(req, res, next) {
     var key = crypto.createHash('md5').update(req.session.user+'-'+Math.random()).digest('hex');
     req.model.client.findOne({key: key}, function(err, client) {
       if(!err && !client) {
-          var secret = crypto.createHash('md5').update(key+req.session.user+Math.random()).digest('hex');
-          req.session.register_client = {};
-          req.session.register_client.key = key;
-          req.session.register_client.secret = secret;
-          var head = '<head><title>Register Client</title></head>';
-          var inputs = '';
-          var fields = {
-                name: {
-                    label: 'Client Name',
-                    html: '<input type="text" id="name" name="name" placeholder="Client Name"/>'
-                },
-                redirect_uris: {
-                    label: 'Redirect Uri',
-                    html: '<input type="text" id="redirect_uris" name="redirect_uris" placeholder="Redirect Uri"/>'
-                },
-                key: {
-                    label: 'Client Key',
-                    html: '<span>'+key+'</span>'
-                },
-                secret: {
-                    label: 'Client Secret',
-                    html: '<span>'+secret+'</span>'
-                }
-          };
-          for(var i in fields) {
-            inputs += '<div><label for="'+i+'">'+fields[i].label+'</label> '+fields[i].html+'</div>';
+        var secret = crypto.createHash('md5').update(key+req.session.user+Math.random()).digest('hex');
+        req.session.register_client = {};
+        req.session.register_client.key = key;
+        req.session.register_client.secret = secret;
+        var head = '<head><title>Register Client</title></head>';
+        var inputs = '';
+        var fields = {
+          name: {
+            label: 'Client Name',
+            html: '<input type="text" id="name" name="name" placeholder="Client Name"/>'
+          },
+          redirect_uris: {
+            label: 'Redirect Uri',
+            html: '<input type="text" id="redirect_uris" name="redirect_uris" placeholder="Redirect Uri"/>'
+          },
+          key: {
+            label: 'Client Key',
+            html: '<span>'+key+'</span>'
+          },
+          secret: {
+            label: 'Client Secret',
+            html: '<span>'+secret+'</span>'
           }
-          var error = req.session.error?'<div>'+req.session.error+'</div>':'';
-          var body = '<body><h1>Register Client</h1><form method="POST">'+inputs+'<input type="submit"/></form>'+error;
-          res.send('<html>'+head+body+'</html>');
+        };
+        for(var i in fields) {
+          inputs += '<div><label for="'+i+'">'+fields[i].label+'</label> '+fields[i].html+'</div>';
+        }
+        var error = req.session.error?'<div>'+req.session.error+'</div>':'';
+        var body = '<body><h1>Register Client</h1><form method="POST">'+inputs+'<input type="submit"/></form>'+error;
+        res.send('<html>'+head+body+'</html>');
       } else if(!err) {
-          mkId();
+        mkId();
       } else {
-          next(err);
+        next(err);
       }
     });
   };
@@ -266,6 +266,49 @@ app.post('/client/register', oidc.use('client'), function(req, res, next) {
       res.redirect('/client/'+client.id);
     } else {
       next(err);
+    }
+  });
+});
+
+app.get('/client/register/ten', oidc.use({policies: {loggedIn: false}, models: ['client', 'user']}), function(req, res, next) {
+  var key = '110bb6e0-0bda-44f9-a724-dbe55176b8c0';
+  req.model.client.findOne({key: key}, function(err, client) {
+
+    function addClient (usr) {
+      var data = {
+        name: 'ten',
+        key: key,
+        secret: '123456789',
+        user: usr.id,
+        redirect_uris: ['http://localhost:3001/callback']
+      };
+      req.model.client.create(data, function(err, client){
+        if(!err && client) {
+          res.redirect('/');
+        } else {
+          next(err);
+        }
+      });
+    }
+
+    if(!err && !client) {
+      req.model.user.findOne({email: 'a@b.c'}, function(err, user) {
+        if (!user) {
+          var data = {
+            given_name: 'Hans',
+            family_name: 'Muster',
+            name: 'Hans Muster',
+            email: 'a@b.c',
+            password: '123',
+            passConfirm: '123'
+          };
+          req.model.user.create(data, function(err, user) {
+            addClient(user);
+          });
+        } else {
+          addClient(user);
+        }
+      });
     }
   });
 });

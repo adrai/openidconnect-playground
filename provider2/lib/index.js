@@ -6,10 +6,7 @@
  * @author Agustín Moyano
  */
 
-var EventEmitter = require('events').EventEmitter,
-querystring = require('querystring'),
-//serializer = require('serializer'),
-//hashlib = require('hashlib2'),
+var querystring = require('querystring'),
 modelling = require('modelling'),
 sailsRedis = require('sails-redis'),
 crypto = require('crypto'),
@@ -243,8 +240,6 @@ function OpenIDConnect(options) {
         });
     }
 }
-
-OpenIDConnect.prototype = new EventEmitter();
 
 OpenIDConnect.prototype.done = function() {
     this.orm.done();
