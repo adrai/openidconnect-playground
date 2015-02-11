@@ -19,16 +19,6 @@ var defaults = {
     address: 'Access to the address Claim.',
     phone: 'Access to the phone_number and phone_number_verified Claims.',
     offline_access: 'Grants access to the End-User\'s UserInfo Endpoint even when the End-User is not present (not logged in).'
-  },
-  policies: {
-    loggedIn: function (req, res, next) {
-      if (req.session.user) {
-        next();
-      } else {
-        var q = req.parsedParams ? req.path + '?' + querystring.stringify(req.parsedParams) : req.originalUrl;
-        res.redirect(this.settings.login_url + '?' + querystring.stringify({return_url: q}));
-      }
-    }
   }
 };
 
@@ -57,6 +47,18 @@ function parse_authorization(authorization) {
 
 function OpenIDConnect(options) {
   this.settings = extend(true, {}, defaults, options);
+
+  var self = this;
+  this.settings.policies = {
+    loggedIn: function (req, res, next) {
+      if (req.session.user) {
+        next();
+      } else {
+        var q = req.parsedParams ? req.path + '?' + querystring.stringify(req.parsedParams) : req.originalUrl;
+        res.redirect(self.settings.login_url + '?' + querystring.stringify({return_url: q}));
+      }
+    }
+  };
 }
 
 OpenIDConnect.prototype.errorHandle = function (res, uri, error, desc) {
@@ -138,7 +140,6 @@ OpenIDConnect.prototype.parseParams = function (req, res, spec) {
  */
 OpenIDConnect.prototype.login = function (validateUser) {
   return [
-    this.settings.policies.loggedIn,
     function (req, res, next) {
       validateUser(req, /*next:*/function (error, user) {
         if (!error && !user) {
@@ -183,7 +184,7 @@ OpenIDConnect.prototype.auth = function () {
   var spec = {
     response_type: true,
     client_id: true,
-    scopes: true,
+    scope: true,
     redirect_uri: true,
     state: false,
     nonce: function (params) {
@@ -203,6 +204,7 @@ OpenIDConnect.prototype.auth = function () {
     function (req, res, next) {
       self.endpointParams(spec, req, res, next);
     },
+    this.settings.policies.loggedIn,
     function (req, res, next) {
       Q(req.parsedParams).then(function (params) {
         //Step 2: Check if response_type is supported and client_id is valid.
@@ -330,7 +332,7 @@ OpenIDConnect.prototype.auth = function () {
                     redirectUri: params.redirect_uri,
                     responseType: params.response_type,
                     status: 'created'
-                  }).exec(function (err, auth) {
+                  }, function (err, auth) {
                     if (!err && auth) {
                       setTimeout(function () {
                         db.auths.getByCode(token, function (err, auth) {
@@ -457,7 +459,7 @@ OpenIDConnect.prototype.auth = function () {
  */
 OpenIDConnect.prototype.consent = function () {
   var self = this;
-  return [self.use('consent'),
+  return [
     function (req, res, next) {
       var accept = req.param('accept');
       var return_url = req.param('return_url');
@@ -574,7 +576,7 @@ OpenIDConnect.prototype.token = function () {
                         //obj.auth = a;
                         deferred.resolve({
                           auth: auth,
-                          scope: auth.scope,
+                          scopes: auth.scopes,
                           client: client,
                           user: auth.user,
                           sub: auth.sub
@@ -669,7 +671,7 @@ OpenIDConnect.prototype.token = function () {
           })
           .then(function (obj) {
             //Check if code was issued for client
-            if (params.grant_type != 'client_credentials' && obj.auth.client.key != client_key) {
+            if (params.grant_type != 'client_credentials' && obj.client.key != client_key) {
               throw {type: 'error', error: 'invalid_grant', msg: 'The code was not issued for this client.'};
             }
 
@@ -694,7 +696,7 @@ OpenIDConnect.prototype.token = function () {
             var setToken = function (access, refresh) {
               db.refreshes.create({
                   token: refresh,
-                  scopes: prev.scope,
+                  scopes: prev.scopes,
                   status: 'created',
                   auth: prev.auth ? prev.auth.id : null
                 },
@@ -718,21 +720,21 @@ OpenIDConnect.prototype.token = function () {
                     exp: d + 3600,
                     iat: d
                   };
-                  db.accessess.create({
+                  db.accesses.create({
                       token: access,
                       type: 'Bearer',
                       expiresIn: 3600,
                       user: prev.user || null,
                       client: prev.client.id,
                       idToken: jwt.encode(id_token, prev.client.secret),
-                      scopes: prev.scope,
+                      scopes: prev.scopes,
                       auth: prev.auth ? prev.auth.id : null
                     },
                     function (err, access) {
                       if (!err && access) {
                         if (prev.auth) {
                           prev.auth.status = 'used';
-                          prev.auth.save();
+                          db.auths.update(prev.auth, function (err) { console.log(err); });
                         }
 
                         setTimeout(function () {
@@ -819,12 +821,12 @@ OpenIDConnect.prototype.check = function () {
 
                 scopes.forEach(function (scope) {
                   if (typeof scope == 'string') {
-                    if (access.scope.indexOf(scope) == -1) {
+                    if (access.scopes.indexOf(scope) == -1) {
                       errors.push(scope);
                     }
                   } else if (util.isRegExp(scope)) {
                     var inS = false;
-                    access.scope.forEach(function (s) {
+                    access.scopes.forEach(function (s) {
                       if (scope.test(s)) {
                         inS = true;
                       }
@@ -839,7 +841,7 @@ OpenIDConnect.prototype.check = function () {
                   self.errorHandle(res, null, 'invalid_scope', 'Required scope ' + errors.pop() + ' not granted.');
                 } else {
                   req.check = req.check || {};
-                  req.check.scopes = access.scope;
+                  req.check.scopes = access.scopes;
                   next();
                 }
               } else {
@@ -870,7 +872,7 @@ OpenIDConnect.prototype.userInfoByAccessToken = function () {
         req.params.access_token = (req.headers['authorization'] || '').indexOf('Bearer ') === 0 ? req.headers['authorization'].replace('Bearer', '').trim() : false;
       }
       if (req.params.access_token) {
-        db.accessess.getByToken(req.params.access_token, function (err, access) {
+        db.accesses.getByToken(req.params.access_token, function (err, access) {
           req.session.user = access.user;
           next();
         });
@@ -927,22 +929,22 @@ OpenIDConnect.prototype.removetokens = function () {
       }
       if (params.access_token) {
         //Delete the provided access token, and other tokens issued to the user
-        db.accessess.getByToken(params.access_token, function (err, access) {
+        db.accesses.getByToken(params.access_token, function (err, access) {
             if (!err && access) {
               db.auths.getByUser(access.user, function (err, auth) {
                   if (!err && auth) {
                     auth.accessTokens.forEach(function (access) {
-                      db.accessess.destroy(access, function (err) { console.log(err); });
+                      db.accesses.destroy(access, function (err) { console.log(err); });
                     });
                     auth.refreshTokens.forEach(function (refresh) {
                       db.refreshes.destroy(refresh, function (err) { console.log(err); });
                     });
                     db.auths.destroy(auth, function (err) { console.log(err); });
                   }
-                  db.accessess.getByUser(access.user, function (err, accesses) {
+                  db.accesses.getByUser(access.user, function (err, accesses) {
                       if (!err && accesses) {
                         accesses.forEach(function (access) {
-                          db.accessess.destroy(access, function (err) { console.log(err); });
+                          db.accesses.destroy(access, function (err) { console.log(err); });
                         });
                       }
                       return next();

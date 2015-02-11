@@ -127,6 +127,62 @@ module.exports = {
         callback(null, vm.toJSON());
       })
     });
+  },
+
+  update: function (data, callback) {
+    if (!data.id) {
+      return callback(new Error('Please pass in an id!'));
+    }
+
+    if (!data.user) {
+      return callback(new Error('Please pass in a user id!'));
+    }
+
+    if (!data.sub) {
+      return callback(new Error('Please pass in a sub!'));
+    }
+
+    if (!data.client) {
+      return callback(new Error('Please pass in a client id!'));
+    }
+
+    if (!data.scopes || data.scopes.length === 0) {
+      return callback(new Error('Please pass in scopes!'));
+    }
+
+    if (!data.code) {
+      return callback(new Error('Please pass in a code!'));
+    }
+
+    if (!data.redirectUri) {
+      return callback(new Error('Please pass in a redirectUri!'));
+    }
+
+    if (!data.responseType) {
+      return callback(new Error('Please pass in a responseType!'));
+    }
+
+    if (!data.status) {
+      return callback(new Error('Please pass in a status!'));
+    }
+
+    data.accessTokens = data.accessTokens || [];
+    data.refreshTokens = data.refreshTokens || [];
+
+    repo.get(data.id, function (err, vm) {
+      if (err) {
+        return callback(err);
+      }
+
+      vm.set(data);
+
+      repo.commit(vm, function (err, vm) {
+        if (err) {
+          return callback(err);
+        }
+        callback(null, vm.toJSON());
+      })
+    });
   }
 
 };

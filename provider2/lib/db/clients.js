@@ -29,7 +29,7 @@ module.exports = {
     });
   },
 
-  getByKey: function(key, secret, callback) {
+  getByKey: function(key, callback) {
     repo.find({ key: key }, function (err, vms) {
       if (err) {
         return callback(err);
