@@ -84,7 +84,7 @@ module.exports = {
         return callback(err);
       }
 
-      vm.set(c);
+      vm.set(data);
 
       repo.commit(vm, function (err, vm) {
         if (err) {

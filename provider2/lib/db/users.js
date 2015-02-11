@@ -19,6 +19,7 @@ var path = require('path'),
 //birthdate
 //gender
 //phone_number
+//updated_at
 
 function cleanUser (user) {
   delete user.password;
@@ -84,6 +85,7 @@ module.exports = {
         vm.set(data);
         vm.set('password', hash);
         vm.set('salt', salt);
+        vm.set('updated_at', Math.floor(Date.now() / 1000));
 
         repo.commit(vm, function (err, vm) {
           if (err) {
@@ -122,6 +124,7 @@ module.exports = {
         delete data.password;
         delete data.passConfirm;
         vm.set(data);
+        vm.set('updated_at', Math.floor(Date.now() / 1000));
 
         repo.commit(vm, function (err, vm) {
           if (err) {
