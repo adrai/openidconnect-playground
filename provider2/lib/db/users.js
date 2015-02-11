@@ -36,12 +36,11 @@ module.exports = {
       if (vm.actionOnCommit === 'create') {
         return callback(null, null);
       }
-      vm.set('clients', []);
       callback(null, cleanUser(vm.toJSON()));
     });
   },
 
-  findOneByEmail: function(email, callback) {
+  getOneByEmail: function(email, callback) {
     repo.find({ email: email }, function (err, vms) {
       if (err) {
         return callback(err);
@@ -69,8 +68,6 @@ module.exports = {
     if (!data.name) {
       data.name = data.given_name + ' ' + (data.middle_name ? data.middle_name + ' ' : '') + data.family_name;
     }
-
-    data.clients = data.clients || [];
 
     hashPassword(data.password, function (err, hash, salt) {
       if (err) {
@@ -114,8 +111,6 @@ module.exports = {
     if (!data.name) {
       data.name = data.given_name + ' ' + (data.middle_name ? data.middle_name + ' ' : '') + data.family_name;
     }
-
-    data.clients = data.clients || [];
 
     if (!data.password) {
       repo.get(data.id, function (err, vm) {

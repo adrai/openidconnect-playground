@@ -13,8 +13,6 @@ var path = require('path'),
 //name
 //image
 //redirect_uris
-//isOwn
-
 
 module.exports = {
 
