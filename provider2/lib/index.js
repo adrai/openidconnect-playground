@@ -1,6 +1,4 @@
 var querystring = require('querystring'),
-  modelling = require('modelling'),
-  sailsRedis = require('sails-redis'),
   crypto = require('crypto'),
   _ = require('lodash'),
   extend = require('extend'),
@@ -9,13 +7,7 @@ var querystring = require('querystring'),
   jwt = require('jwt-simple'),
   util = require("util"),
   base64url = require('base64url'),
-  cleanObj = require('clean-obj');
-
-
-
-
-
-
+  db = require('./db');
 
 var defaults = {
   login_url: '/login',
@@ -35,150 +27,6 @@ var defaults = {
       } else {
         var q = req.parsedParams ? req.path + '?' + querystring.stringify(req.parsedParams) : req.originalUrl;
         res.redirect(this.settings.login_url + '?' + querystring.stringify({return_url: q}));
-      }
-    }
-  },
-  adapters: {
-    redis: sailsRedis
-  },
-  connections: {
-    def: {
-      adapter: 'redis'
-    }
-  },
-  models: {
-    user: {
-      identity: 'user',
-      connection: 'def',
-      schema: true,
-      policies: 'loggedIn',
-      attributes: {
-        name: {type: 'string', required: true, unique: true},
-        given_name: {type: 'string', required: true},
-        middle_name: 'string',
-        family_name: {type: 'string', required: true},
-        profile: 'string',
-        email: {type: 'string', email: true, required: true, unique: true},
-        password: 'string',
-        picture: 'binary',
-        birthdate: 'date',
-        gender: 'string',
-        phone_number: 'string',
-        samePassword: function (clearText) {
-          var sha256 = crypto.createHash('sha256');
-          sha256.update(clearText);
-          return this.password == sha256.digest('hex');
-        }
-      },
-      beforeCreate: function (values, next) {
-        if (values.password) {
-          if (values.password != values.passConfirm) {
-            return next("Password and confirmation does not match");
-          }
-          var sha256 = crypto.createHash('sha256');
-          sha256.update(values.password);
-          values.password = sha256.digest('hex');
-        }
-        next();
-      },
-      beforeUpdate: function (values, next) {
-        if (values.password) {
-          if (values.password != values.passConfirm) {
-            return next("Password and confirmation does not match");
-          }
-          var sha256 = crypto.createHash('sha256');
-          sha256.update(values.password);
-          values.password = sha256.digest('hex');
-        }
-        next();
-      }
-    },
-    client: {
-      identity: 'client',
-      connection: 'def',
-      schema: true,
-      policies: 'loggedIn',
-      attributes: {
-        key: {type: 'string', required: true, unique: true},
-        secret: {type: 'string', required: true, unique: true},
-        name: {type: 'string', required: true},
-        image: 'binary',
-        user: {model: 'user'},
-        redirect_uris: {type: 'array', required: true},
-        credentialsFlow: {type: 'boolean', defaultsTo: false}
-      },
-      beforeCreate: function (values, next) {
-        if (!values.key) {
-          var sha256 = crypto.createHash('sha256');
-          sha256.update(values.name);
-          sha256.update(Math.random() + '');
-          values.key = sha256.digest('hex');
-        }
-        if (!values.secret) {
-          var sha256 = crypto.createHash('sha256');
-          sha256.update(values.key);
-          sha256.update(values.name);
-          sha256.update(Math.random() + '');
-          values.secret = sha256.digest('hex');
-        }
-        next();
-      }
-    },
-    consent: {
-      identity: 'consent',
-      connection: 'def',
-      policies: 'loggedIn',
-      attributes: {
-        user: {model: 'user', required: true},
-        client: {model: 'client', required: true},
-        scopes: 'array'
-      }
-    },
-    auth: {
-      identity: 'auth',
-      connection: 'def',
-      policies: 'loggedIn',
-      attributes: {
-        client: {model: 'client', required: true},
-        scope: {type: 'array', required: true},
-        user: {model: 'user', required: true},
-        sub: {type: 'string', required: true},
-        code: {type: 'string', required: true},
-        redirectUri: {type: 'url', required: true},
-        responseType: {type: 'string', required: true},
-        status: {type: 'string', required: true},
-        accessTokens: {
-          collection: 'access',
-          via: 'auth'
-        },
-        refreshTokens: {
-          collection: 'refresh',
-          via: 'auth'
-        }
-      }
-    },
-    access: {
-      identity: 'access',
-      connection: 'def',
-      attributes: {
-        token: {type: 'string', required: true},
-        type: {type: 'string', required: true},
-        idToken: 'string',
-        expiresIn: 'integer',
-        scope: {type: 'array', required: true},
-        client: {model: 'client', required: true},
-        user: {model: 'user', required: true},
-        auth: {model: 'auth'}
-      }
-    },
-    refresh: {
-      identity: 'refresh',
-      connection: 'def',
-      attributes: {
-        token: {type: 'string', required: true},
-        scope: {type: 'array', required: true},
-        auth: {model: 'auth', required: true},
-        status: {type: 'string', required: true}
       }
     }
   }
@@ -209,95 +57,7 @@ function parse_authorization(authorization) {
 
 function OpenIDConnect(options) {
   this.settings = extend(true, {}, defaults, options);
-
-  //allow removing attributes, by marking thme as null
-  cleanObj(this.settings.models, true);
-
-  for (var i in this.settings.policies) {
-    this.settings.policies[i] = this.settings.policies[i].bind(this);
-  }
-
-  if (this.settings.alien) {
-    for (var i in alien) {
-      if (this.settings.models[i]) delete this.settings.models[i];
-    }
-  }
-
-  if (this.settings.orm) {
-    this.orm = this.settings.orm;
-    for (var i in this.settings.policies) {
-      this.orm.setPolicy(true, i, this.settings.policies[i]);
-    }
-  } else {
-
-    this.orm = new modelling({
-      models: this.settings.models,
-      adapters: this.settings.adapters,
-      connections: this.settings.connections,
-      app: this.settings.app,
-      policies: this.settings.policies
-    });
-  }
 }
-
-OpenIDConnect.prototype.done = function () {
-  this.orm.done();
-};
-
-OpenIDConnect.prototype.model = function (name) {
-  return this.orm.model(name);
-};
-
-OpenIDConnect.prototype.use = function (name) {
-  var alien = {};
-  if (this.settings.alien) {
-    var self = this;
-    if (!name) {
-      alien = this.settings.alien;
-    } else {
-      var m;
-      if (_.isPlainObject(name) && name.models) {
-        m = name.models;
-      }
-      if (util.isArray(m || name)) {
-        (m || name).forEach(function (model) {
-          if (self.settings.alien[model]) {
-            alien[model] = self.settings.alien[model];
-          }
-        });
-      } else if (self.settings.alien[m || name]) {
-        alien[m || name] = self.settings.alien[m || name];
-      }
-    }
-  }
-  return [this.orm.use(name), function (req, res, next) {
-    extend(req.model, alien);
-    next();
-  }];
-};
-
-OpenIDConnect.prototype.getOrm = function () {
-  return this.orm;
-};
-/*OpenIDConnect.prototype.getClientParams = function() {
- return this.orm.client.getParams();
- };*/
-
-/*OpenIDConnect.prototype.searchClient = function(parts, callback) {
- return new this.orm.client.reverse(parts, callback);
- };
-
- OpenIDConnect.prototype.getUserParams = function() {
- return this.orm.user.getParams();
- };
-
- OpenIDConnect.prototype.user = function(params, callback) {
- return new this.orm.user(params, callback);
- };
-
- OpenIDConnect.prototype.searchUser = function(parts, callback) {
- return new this.orm.user.reverse(parts, callback);
- };*/
 
 OpenIDConnect.prototype.errorHandle = function (res, uri, error, desc) {
   if (uri) {
@@ -376,11 +136,9 @@ OpenIDConnect.prototype.parseParams = function (req, res, spec) {
  *
  *
  */
-
 OpenIDConnect.prototype.login = function (validateUser) {
-  var self = this;
-
-  return [self.use({policies: {loggedIn: false}, models: 'user'}),
+  return [
+    this.settings.policies.loggedIn,
     function (req, res, next) {
       validateUser(req, /*next:*/function (error, user) {
         if (!error && !user) {
@@ -406,7 +164,8 @@ OpenIDConnect.prototype.login = function (validateUser) {
           return next(error);
         }
       });
-    }];
+    }
+  ];
 };
 
 /**
@@ -424,7 +183,7 @@ OpenIDConnect.prototype.auth = function () {
   var spec = {
     response_type: true,
     client_id: true,
-    scope: true,
+    scopes: true,
     redirect_uri: true,
     state: false,
     nonce: function (params) {
@@ -440,10 +199,10 @@ OpenIDConnect.prototype.auth = function () {
     acr_values: false,
     response_mode: false
   };
-  return [function (req, res, next) {
-    self.endpointParams(spec, req, res, next);
-  },
-    self.use(['client', 'consent', 'auth', 'access']),
+  return [
+    function (req, res, next) {
+      self.endpointParams(spec, req, res, next);
+    },
     function (req, res, next) {
       Q(req.parsedParams).then(function (params) {
         //Step 2: Check if response_type is supported and client_id is valid.
@@ -469,7 +228,7 @@ OpenIDConnect.prototype.auth = function () {
               }
             });
         }
-        req.model.client.findOne({key: params.client_id}, function (err, model) {
+        db.clients.getByKey(params.client_id, function (err, model) {
           if (err || !model || model === '') {
             deferred.reject({
               type: 'error',
@@ -492,7 +251,7 @@ OpenIDConnect.prototype.auth = function () {
         var reqsco = params.scope.split(' ');
         req.session.scopes = {};
         var promises = [];
-        req.model.consent.findOne({user: req.session.user, client: req.session.client_id}, function (err, consent) {
+        db.consents.getByUserAndClient(req.session.user, req.session.client_id, function (err, consent) {
           reqsco.forEach(function (scope) {
             var innerDef = Q.defer();
             if (!self.settings.scopes[scope]) {
@@ -553,7 +312,7 @@ OpenIDConnect.prototype.auth = function () {
               case 'code':
                 var createToken = function () {
                   var token = crypto.createHash('md5').update(params.client_id).update(Math.random() + '').digest('hex');
-                  req.model.auth.findOne({code: token}, function (err, auth) {
+                  db.auths.getByCode(token, function (err, auth) {
                     if (!auth) {
                       setToken(token);
                     } else {
@@ -562,9 +321,9 @@ OpenIDConnect.prototype.auth = function () {
                   });
                 };
                 var setToken = function (token) {
-                  req.model.auth.create({
+                  db.auths.create({
                     client: req.session.client_id,
-                    scope: params.scope.split(' '),
+                    scopes: params.scope.split(' '),
                     user: req.session.user,
                     sub: req.session.sub || req.session.user,
                     code: token,
@@ -574,9 +333,9 @@ OpenIDConnect.prototype.auth = function () {
                   }).exec(function (err, auth) {
                     if (!err && auth) {
                       setTimeout(function () {
-                        req.model.auth.findOne({code: token}, function (err, auth) {
+                        db.auths.getByCode(token, function (err, auth) {
                           if (auth && auth.status == 'created') {
-                            auth.destroy();
+                            db.auths.destroy(auth, function (err) { console.log(err); });
                           }
                         });
                       }, 1000 * 60 * 10); //10 minutes
@@ -607,7 +366,7 @@ OpenIDConnect.prototype.auth = function () {
               case 'token':
                 var createToken = function () {
                   var token = crypto.createHash('md5').update(params.client_id).update(Math.random() + '').digest('hex');
-                  req.model.access.findOne({token: token}, function (err, access) {
+                  db.accesses.getByToken(token, function (err, access) {
                     if (!access) {
                       setToken(token);
                     } else {
@@ -622,9 +381,9 @@ OpenIDConnect.prototype.auth = function () {
                     expiresIn: 3600,
                     user: req.session.user,
                     client: req.session.client_id,
-                    scope: params.scope.split(' ')
+                    scopes: params.scope.split(' ')
                   };
-                  req.model.access.create(obj, function (err, access) {
+                  db.accesses.create(obj, function (err, access) {
                     if (!err && access) {
                       setTimeout(function () {
                         access.destroy();
@@ -708,8 +467,8 @@ OpenIDConnect.prototype.consent = function () {
         for (var i in req.session.scopes) {
           scopes.push(i);
         }
-        req.model.consent.destroy({user: req.session.user, client: req.session.client_id}, function (err, result) {
-          req.model.consent.create({
+        db.consents.destroy({user: req.session.user, client: req.session.client_id}, function (err, result) {
+          db.consents.create({
             user: req.session.user,
             client: req.session.client_id,
             scopes: scopes
@@ -751,8 +510,6 @@ OpenIDConnect.prototype.token = function () {
       self.endpointParams(spec, req, res, next)
     },
 
-    self.use({policies: {loggedIn: false}, models: ['client', 'consent', 'auth', 'access', 'refresh']}),
-
     function (req, res, next) {
       var params = req.parsedParams;
 
@@ -773,7 +530,7 @@ OpenIDConnect.prototype.token = function () {
         Q.fcall(function () {
           //Step 2: check if client and secret are valid
           var deferred = Q.defer();
-          req.model.client.findOne({key: client_key, secret: client_secret}, function (err, client) {
+          db.clients.getByKeyAndSecret(client_key, client_secret, function (err, client) {
             if (err || !client) {
               deferred.reject({
                 type: 'error',
@@ -794,24 +551,20 @@ OpenIDConnect.prototype.token = function () {
               //Client is trying to exchange an authorization code for an access token
               case "authorization_code":
                 //Step 3: check if code is valid and not used previously
-                req.model.auth.findOne({code: params.code})
-                  .populate('accessTokens')
-                  .populate('refreshTokens')
-                  .populate('client')
-                  .exec(function (err, auth) {
+                db.auths.getByCode(params.code, function (err, auth) {
                     if (!err && auth) {
                       if (auth.status != 'created') {
                         if (auth.refresh) {
                           auth.refresh.forEach(function (refresh) {
-                            refresh.destroy();
+                            db.refreshes.destroy(refresh, function (err) { console.log(err); });
                           });
                         }
                         if (auth.access) {
                           auth.access.forEach(function (access) {
-                            access.destroy();
+                            db.accesses.destroy(access, function (err) { console.log(err); });
                           });
                         }
-                        auth.destroy();
+                        db.auths.destroy(auth, function (err) { console.log(err); });
                         deferred.reject({
                           type: 'error',
                           error: 'invalid_grant',
@@ -854,25 +607,21 @@ OpenIDConnect.prototype.token = function () {
               case "refresh_token":
 
                 //Step 3: check if refresh token is valid and not used previously
-                req.model.refresh.findOne({token: params.refresh_token}, function (err, refresh) {
+                db.refreshes.getByToken(params.refresh_token, function (err, refresh) {
                   if (!err && refresh) {
-                    req.model.auth.findOne({id: refresh.auth})
-                      .populate('accessTokens')
-                      .populate('refreshTokens')
-                      .populate('client')
-                      .exec(function (err, auth) {
+                    db.auths.getById(refresh.auth, function (err, auth) {
                         if (refresh.status != 'created') {
                           auth.access.forEach(function (access) {
-                            access.destroy();
+                            db.accesses.destroy(access, function (err) { console.log(err); });
                           });
                           auth.refresh.forEach(function (refresh) {
-                            refresh.destroy();
+                            db.refreshes.destroy(refresh, function (err) { console.log(err); });
                           });
-                          auth.destroy();
+                          db.auths.destroy(auth, function (err) { console.log(err); });
                           deferred.reject({type: 'error', error: 'invalid_grant', msg: 'Refresh token already used.'});
                         } else {
                           refresh.status = 'used';
-                          refresh.save();
+                          db.refreshes.update(refresh, function (err) { console.log(err); });
                           deferred.resolve({auth: auth, client: client, user: auth.user, sub: auth.sub});
                         }
                       });
@@ -934,7 +683,7 @@ OpenIDConnect.prototype.token = function () {
 
             var createToken = function (model, cb) {
               var token = crypto.createHash('md5').update(Math.random() + '').digest('hex');
-              model.findOne({token: token}, function (err, response) {
+              model.getByToken(token, function (err, response) {
                 if (!response) {
                   cb(token);
                 } else {
@@ -943,22 +692,19 @@ OpenIDConnect.prototype.token = function () {
               });
             };
             var setToken = function (access, refresh) {
-              req.model.refresh.create({
+              db.refreshes.create({
                   token: refresh,
-                  scope: prev.scope,
+                  scopes: prev.scope,
                   status: 'created',
                   auth: prev.auth ? prev.auth.id : null
                 },
                 function (err, refresh) {
                   setTimeout(function () {
-                    refresh.destroy();
+                    db.refreshes.destroy(refresh, function (err) { console.log(err); });
                     if (refresh.auth) {
-                      req.model.auth.findOne({id: refresh.auth})
-                        .populate('accessTokens')
-                        .populate('refreshTokens')
-                        .exec(function (err, auth) {
+                      db.auths.getById(refresh.auth, function (err, auth) {
                           if (!auth.access.length && !auth.refresh.length) {
-                            auth.destroy();
+                            db.auths.destroy(auth, function (err) { console.log(err); });
                           }
                         });
                     }
@@ -972,14 +718,14 @@ OpenIDConnect.prototype.token = function () {
                     exp: d + 3600,
                     iat: d
                   };
-                  req.model.access.create({
+                  db.accessess.create({
                       token: access,
                       type: 'Bearer',
                       expiresIn: 3600,
                       user: prev.user || null,
                       client: prev.client.id,
                       idToken: jwt.encode(id_token, prev.client.secret),
-                      scope: prev.scope,
+                      scopes: prev.scope,
                       auth: prev.auth ? prev.auth.id : null
                     },
                     function (err, access) {
@@ -990,14 +736,11 @@ OpenIDConnect.prototype.token = function () {
                         }
 
                         setTimeout(function () {
-                          access.destroy();
+                          db.accesses.destroy(access, function (err) { console.log(err); });
                           if (access.auth) {
-                            req.model.auth.findOne({id: refresh.auth})
-                              .populate('accessTokens')
-                              .populate('refreshTokens')
-                              .exec(function (err, auth) {
+                            db.auths.getById(refresh.auth, function (err, auth) {
                                 if (!auth.access.length && !auth.refresh.length) {
-                                  auth.destroy();
+                                  db.auths.destroy(auth, function (err) { console.log(err); });
                                 }
                               });
                           }
@@ -1015,8 +758,8 @@ OpenIDConnect.prototype.token = function () {
                     });
                 });
             };
-            createToken(req.model.access, function (access) {
-              createToken(req.model.refresh, function (refresh) {
+            createToken(db.accesses, function (access) {
+              createToken(db.refreshes, function (refresh) {
                 setToken(access, refresh);
               });
             });
@@ -1061,7 +804,6 @@ OpenIDConnect.prototype.check = function () {
     function (req, res, next) {
       self.endpointParams(spec, req, res, next);
     },
-    self.use({policies: {loggedIn: false}, models: ['access', 'auth']}),
     function (req, res, next) {
       var params = req.parsedParams;
       if (!scopes.length) {
@@ -1071,8 +813,7 @@ OpenIDConnect.prototype.check = function () {
           params.access_token = (req.headers['authorization'] || '').indexOf('Bearer ') === 0 ? req.headers['authorization'].replace('Bearer', '').trim() : false;
         }
         if (params.access_token) {
-          req.model.access.findOne({token: params.access_token})
-            .exec(function (err, access) {
+          db.accesses.getByToken(params.access_token, function (err, access) {
               if (!err && access) {
                 var errors = [];
 
@@ -1123,15 +864,13 @@ OpenIDConnect.prototype.check = function () {
  * This function returns the user info in a json object. Checks for scope and login are included.
  */
 OpenIDConnect.prototype.userInfoByAccessToken = function () {
-  var self = this;
   return [
-    self.use('access'),
     function (req, res, next) {
       if (!req.params.access_token) {
         req.params.access_token = (req.headers['authorization'] || '').indexOf('Bearer ') === 0 ? req.headers['authorization'].replace('Bearer', '').trim() : false;
       }
       if (req.params.access_token) {
-        req.model.access.findOne({token: req.params.access_token}, function (err, access) {
+        db.accessess.getByToken(req.params.access_token, function (err, access) {
           req.session.user = access.user;
           next();
         });
@@ -1146,14 +885,11 @@ OpenIDConnect.prototype.userInfo = function () {
   var self = this;
   return [
     self.check('openid', /profile|email/),
-    self.use('user'),
     function (req, res, next) {
-      req.model.user.findOne({id: req.session.user}, function (err, user) {
+      db.users.getById(req.session.user, function (err, user) {
         if (req.check.scopes.indexOf('profile') != -1) {
           user.sub = req.session.sub || req.session.user;
-          delete user.id;
           delete user.password;
-          delete user.openidProvider;
           res.json(user);
         } else {
           res.json({email: user.email});
@@ -1183,7 +919,6 @@ OpenIDConnect.prototype.removetokens = function () {
     function (req, res, next) {
       self.endpointParams(spec, req, res, next);
     },
-    self.use({policies: {loggedIn: false}, models: ['access', 'auth']}),
     function (req, res, next) {
       var params = req.parsedParams;
 
@@ -1192,27 +927,22 @@ OpenIDConnect.prototype.removetokens = function () {
       }
       if (params.access_token) {
         //Delete the provided access token, and other tokens issued to the user
-        req.model.access.findOne({token: params.access_token})
-          .exec(function (err, access) {
+        db.accessess.getByToken(params.access_token, function (err, access) {
             if (!err && access) {
-              req.model.auth.findOne({user: access.user})
-                .populate('accessTokens')
-                .populate('refreshTokens')
-                .exec(function (err, auth) {
+              db.auths.getByUser(access.user, function (err, auth) {
                   if (!err && auth) {
                     auth.accessTokens.forEach(function (access) {
-                      access.destroy();
+                      db.accessess.destroy(access, function (err) { console.log(err); });
                     });
                     auth.refreshTokens.forEach(function (refresh) {
-                      refresh.destroy();
+                      db.refreshes.destroy(refresh, function (err) { console.log(err); });
                     });
-                    auth.destroy();
+                    db.auths.destroy(auth, function (err) { console.log(err); });
                   }
-                  req.model.access.find({user: access.user})
-                    .exec(function (err, accesses) {
+                  db.accessess.getByUser(access.user, function (err, accesses) {
                       if (!err && accesses) {
                         accesses.forEach(function (access) {
-                          access.destroy();
+                          db.accessess.destroy(access, function (err) { console.log(err); });
                         });
                       }
                       return next();
@@ -1229,10 +959,10 @@ OpenIDConnect.prototype.removetokens = function () {
   ];
 };
 
-exports.oidc = function (options) {
+module.exports.oidc = function (options) {
   return new OpenIDConnect(options);
 };
 
-exports.defaults = function () {
+module.exports.defaults = function () {
   return defaults;
 };

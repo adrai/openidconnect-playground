@@ -22,8 +22,21 @@ var path = require('path'),
 //updated_at
 
 function cleanUser (user) {
-  delete user.password;
+  var salt = user.salt;
+  var password = user.password;
+
   delete user.salt;
+  delete user.password;
+
+  user.samePassword = function (pwd, callback) {
+    hashPassword(pwd, salt, function (err, hash) {
+      if (err) {
+        return callback(err);
+      }
+      callback(null, hash === password);
+    });
+  };
+
   return user;
 }
 
@@ -41,7 +54,7 @@ module.exports = {
     });
   },
 
-  getOneByEmail: function(email, callback) {
+  getByEmail: function(email, callback) {
     repo.find({ email: email }, function (err, vms) {
       if (err) {
         return callback(err);

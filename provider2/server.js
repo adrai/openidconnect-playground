@@ -11,12 +11,10 @@ var crypto = require('crypto'),
     querystring = require('querystring'),
     rs = require('connect-redis')(expressSession),
     extend = require('extend'),
-    test = {
-        status: 'new'
-    },
     logger = require('morgan'),
     errorHandler = require('errorhandler'),
-    methodOverride = require('method-override');
+    methodOverride = require('method-override'),
+    db = require('./lib/db');
 
 var app = express();
 
@@ -26,10 +24,7 @@ var options = {
   scopes: {
     foo: 'Access to foo special resource',
     bar: 'Access to bar special resource'
-  },
-//when this line is enabled, user email appears in tokens sub field. By default, id is used as sub.
-  models:{user:{attributes:{sub:function(){return this.id;}}}},
-  app: app
+  }
 };
 var oidc = require('./lib/index').oidc(options);
 
@@ -59,9 +54,19 @@ app.get('/my/login', function(req, res, next) {
 
 var validateUser = function (req, next) {
   delete req.session.error;
-  req.model.user.findOne({email: req.body.email}, function(err, user) {
-      if(!err && user && user.samePassword(req.body.password)) {
-        return next(null, user);
+  db.users.getByEmail(req.body.email, function(err, user) {
+      if(!err && user) {
+        user.samePassword(req.body.password, function (err, same) {
+          if (err) {
+            return next(err);
+          }
+          if (same) {
+            return next(null, user);
+          } else {
+            var error = new Error('Username or password incorrect.');
+            return next(error);
+          }
+        });
       } else {
         var error = new Error('Username or password incorrect.');
         return next(error);
@@ -158,9 +163,9 @@ app.get('/user/create', function(req, res, next) {
 });
 
 //process user creation
-app.post('/user/create', oidc.use({policies: {loggedIn: false}, models: 'user'}), function(req, res, next) {
+app.post('/user/create', function(req, res, next) {
   delete req.session.error;
-  req.model.user.findOne({email: req.body.email}, function(err, user) {
+  db.users.getByEmail(req.body.email, function(err, user) {
       if(err) {
           req.session.error=err;
       } else if(user) {
@@ -170,7 +175,7 @@ app.post('/user/create', oidc.use({policies: {loggedIn: false}, models: 'user'})
           res.redirect(req.path);
       } else {
           req.body.name = req.body.given_name+' '+(req.body.middle_name?req.body.middle_name+' ':'')+req.body.family_name;
-          req.model.user.create(req.body, function(err, user) {
+          db.users.create(req.body, function(err, user) {
              if(err || !user) {
                  req.session.error=err?err:'User could not be created.';
                  res.redirect(req.path);
@@ -212,7 +217,7 @@ app.get('/client/register', oidc.use('client'), function(req, res, next) {
 
   var mkId = function() {
     var key = crypto.createHash('md5').update(req.session.user+'-'+Math.random()).digest('hex');
-    req.model.client.findOne({key: key}, function(err, client) {
+    db.clients.getByKey(key, function(err, client) {
       if(!err && !client) {
         var secret = crypto.createHash('md5').update(key+req.session.user+Math.random()).digest('hex');
         req.session.register_client = {};
@@ -255,36 +260,51 @@ app.get('/client/register', oidc.use('client'), function(req, res, next) {
 });
 
 //process client register
-app.post('/client/register', oidc.use('client'), function(req, res, next) {
+app.post('/client/register', function(req, res, next) {
     delete req.session.error;
   req.body.key = req.session.register_client.key;
   req.body.secret = req.session.register_client.secret;
-  req.body.user = req.session.user;
   req.body.redirect_uris = req.body.redirect_uris.split(/[, ]+/);
-  req.model.client.create(req.body, function(err, client){
+  db.clients.create(req.body, function(err, client){
     if(!err && client) {
-      res.redirect('/client/'+client.id);
+      db.consents.create({
+        user:req.session.user,
+        client: client.id
+      }, function (err, consent) {
+        if(!err && consent) {
+          res.redirect('/client/'+client.id);
+        } else {
+          next(err);
+        }
+      });
     } else {
       next(err);
     }
   });
 });
 
-app.get('/client/register/ten', oidc.use({policies: {loggedIn: false}, models: ['client', 'user']}), function(req, res, next) {
+app.get('/client/register/ten', function(req, res, next) {
   var key = '110bb6e0-0bda-44f9-a724-dbe55176b8c0';
-  req.model.client.findOne({key: key}, function(err, client) {
-
+  db.clients.getByKey(key, function(err, client) {
     function addClient (usr) {
       var data = {
         name: 'ten',
         key: key,
         secret: '123456789',
-        user: usr.id,
         redirect_uris: ['http://localhost:3001/callback']
       };
-      req.model.client.create(data, function(err, client){
+      db.clients.create(data, function(err, client){
         if(!err && client) {
-          res.redirect('/');
+          db.consents.create({
+            user: usr.id,
+            client: client.id
+          }, function (err, consent) {
+            if(!err && consent) {
+              res.redirect('/');
+            } else {
+              next(err);
+            }
+          });
         } else {
           next(err);
         }
@@ -292,7 +312,7 @@ app.get('/client/register/ten', oidc.use({policies: {loggedIn: false}, models: [
     }
 
     if(!err && !client) {
-      req.model.user.findOne({email: 'a@b.c'}, function(err, user) {
+      db.users.getByEmail('a@b.c', function(err, user) {
         if (!user) {
           var data = {
             given_name: 'Hans',
@@ -302,7 +322,7 @@ app.get('/client/register/ten', oidc.use({policies: {loggedIn: false}, models: [
             password: '123',
             passConfirm: '123'
           };
-          req.model.user.create(data, function(err, user) {
+          db.users.create(data, function(err, user) {
             addClient(user);
           });
         } else {
@@ -313,9 +333,9 @@ app.get('/client/register/ten', oidc.use({policies: {loggedIn: false}, models: [
   });
 });
 
-app.get('/client', oidc.use('client'), function(req, res, next){
+app.get('/client', function(req, res, next){
   var head ='<h1>Clients Page</h1><div><a href="/client/register"/>Register new client</a></div>';
-  req.model.client.find({user: req.session.user}, function(err, clients){
+  db.clients.getByUser(req.session.user, function(err, clients){
      var body = ["<ul>"];
      clients.forEach(function(client) {
         body.push('<li><a href="/client/'+client.id+'">'+client.name+'</li>');
@@ -325,8 +345,8 @@ app.get('/client', oidc.use('client'), function(req, res, next){
   });
 });
 
-app.get('/client/:id', oidc.use('client'), function(req, res, next){
-  req.model.client.findOne({user: req.session.user, id: req.params.id}, function(err, client){
+app.get('/client/:id', function(req, res, next){
+  db.clients.getById(req.params.id, function(err, client){
       if(err) {
           next(err);
       } else if(client) {
@@ -342,217 +362,10 @@ app.get('/client/:id', oidc.use('client'), function(req, res, next){
   });
 });
 
-app.get('/test/clear', function(req, res, next){
-    test = {status: 'new'};
-    res.redirect('/test');
-});
-
-app.get('/test', oidc.use({policies: {loggedIn: false}, models: 'client'}), function(req, res, next) {
-    var html='<h1>Test Auth Flows</h1>';
-    var resOps = {
-            "/user/foo": "Restricted by foo scope",
-            "/user/bar": "Restricted by bar scope",
-            "/user/and": "Restricted by 'bar and foo' scopes",
-            "/user/or": "Restricted by 'bar or foo' scopes",
-            "/api/user": "User Info Endpoint"
-    };
-    var mkinputs = function(name, desc, type, value, options) {
-        var inp = '';
-        switch(type) {
-        case 'select':
-            inp = '<select id="'+name+'" name="'+name+'">';
-            for(var i in options) {
-                inp += '<option value="'+i+'"'+(value&&value==i?' selected':'')+'>'+options[i]+'</option>';
-            }
-            inp += '</select>';
-            inp = '<div><label for="'+name+'">'+(desc||name)+'</label>'+inp+'</div>';
-            break;
-        default:
-            if(options) {
-                for(var i in options) {
-                    inp +=  '<div>'+
-                                '<label for="'+name+'_'+i+'">'+options[i]+'</label>'+
-                                '<input id="'+name+'_'+i+' name="'+name+'" type="'+(type||'radio')+'" value="'+i+'"'+(value&&value==i?' checked':'')+'>'+
-                            '</div>';
-                }
-            } else {
-                inp = '<input type="'+(type||'text')+'" id="'+name+'"  name="'+name+'" value="'+(value||'')+'">';
-                if(type!='hidden') {
-                    inp = '<div><label for="'+name+'">'+(desc||name)+'</label>'+inp+'</div>';
-                }
-            }
-        }
-        return inp;
-    };
-    switch(test.status) {
-    case "new":
-        req.model.client.find().populate('user').exec(function(err, clients){
-            var inputs = [];
-            inputs.push(mkinputs('response_type', 'Auth Flow', 'select', null, {code: 'Auth Code', "id_token token": 'Implicit'}));
-            var options = {};
-            clients.forEach(function(client){
-                options[client.key+':'+client.secret]=client.user.id+' '+client.user.email+' '+client.key+' ('+client.redirect_uris.join(', ')+')';
-            });
-            inputs.push(mkinputs('client_id', 'Client Key', 'select', null, options));
-            //inputs.push(mkinputs('secret', 'Client Secret', 'text'));
-            inputs.push(mkinputs('scope', 'Scopes', 'text'));
-            inputs.push(mkinputs('nonce', 'Nonce', 'text', 'N-'+Math.random()));
-            test.status='1';
-            res.send(html+'<form method="GET">'+inputs.join('')+'<input type="submit"/></form>');
-        });
-        break;
-    case '1':
-        req.query.redirect_uri=req.protocol+'://'+req.headers.host+req.path;
-        extend(test, req.query);
-        req.query.client_id = req.query.client_id.split(':')[0];
-        test.status = '2';
-        res.redirect('/user/authorize?'+querystring.stringify(req.query));
-        break;
-    case '2':
-        extend(test, req.query);
-        if(test.response_type == 'code') {
-            test.status = '3';
-            var inputs = [];
-            //var c = test.client_id.split(':');
-            inputs.push(mkinputs('code', 'Code', 'text', req.query.code));
-            /*inputs.push(mkinputs('grant_type', null, 'hidden', 'authorization_code'));
-            inputs.push(mkinputs('client_id', null, 'hidden', c[0]));
-            inputs.push(mkinputs('client_secret', null, 'hidden', c[1]));
-            inputs.push(mkinputs('redirect_uri', null, 'hidden', test.redirect_uri));*/
-            res.send(html+'<form method="GET">'+inputs.join('')+'<input type="submit" value="Get Token"/></form>');
-        } else {
-            test.status = '4';
-            html += "Got: <div id='data'></div>";
-            var inputs = [];
-            //var c = test.client_id.split(':');
-            inputs.push(mkinputs('access_token', 'Access Token', 'text'));
-            inputs.push(mkinputs('page', 'Resource to access', 'select', null, resOps));
-
-            var after =
-                "<script>" +
-                    "document.getElementById('data').innerHTML = window.location.hash; " +
-                    "var h = window.location.hash.split('&'); " +
-                    "for(var i = 0; i < h.length; i++) { " +
-                        "var p = h[i].split('='); " +
-                        "if(p[0]=='access_token') { " +
-                            "document.getElementById('access_token').value = p[1]; " +
-                            "break; " +
-                        "} " +
-                    "}" +
-                "</script>";
-            /*inputs.push(mkinputs('grant_type', null, 'hidden', 'authorization_code'));
-            inputs.push(mkinputs('client_id', null, 'hidden', c[0]));
-            inputs.push(mkinputs('client_secret', null, 'hidden', c[1]));
-            inputs.push(mkinputs('redirect_uri', null, 'hidden', test.redirect_uri));*/
-            res.send(html+'<form method="GET">'+inputs.join('')+'<input type="submit" value="Get Resource"/></form>'+after);
-        }
-        break;
-    case '3':
-        test.status = '4';
-        test.code = req.query.code;
-        var query = {
-                grant_type: 'authorization_code',
-                code: test.code,
-                redirect_uri: test.redirect_uri
-        };
-        var post_data = querystring.stringify(query);
-        var post_options = {
-            port: app.get('port'),
-            path: '/user/token',
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Content-Length': post_data.length,
-                'Authorization': 'Basic '+Buffer(test.client_id, 'utf8').toString('base64'),
-                'Cookie': req.headers.cookie
-            }
-        };
-
-        // Set up the request
-        var post_req = http.request(post_options, function(pres) {
-            pres.setEncoding('utf8');
-            var data = '';
-            pres.on('data', function (chunk) {
-                data += chunk;
-                console.log('Response: ' + chunk);
-            });
-            pres.on('end', function(){
-                console.log(data);
-                try {
-                    data = JSON.parse(data);
-                    html += "Got: <pre>"+JSON.stringify(data)+"</pre>";
-                    var inputs = [];
-                    //var c = test.client_id.split(':');
-                    inputs.push(mkinputs('access_token', 'Access Token', 'text', data.access_token));
-                    inputs.push(mkinputs('page', 'Resource to access', 'select', null, resOps));
-                    /*inputs.push(mkinputs('grant_type', null, 'hidden', 'authorization_code'));
-                    inputs.push(mkinputs('client_id', null, 'hidden', c[0]));
-                    inputs.push(mkinputs('client_secret', null, 'hidden', c[1]));
-                    inputs.push(mkinputs('redirect_uri', null, 'hidden', test.redirect_uri));*/
-                    res.send(html+'<form method="GET">'+inputs.join('')+'<input type="submit" value="Get Resource"/></form>');
-                } catch(e) {
-                    res.send('<div>'+data+'</div>');
-                }
-            });
-        });
-
-        // post the data
-        post_req.write(post_data);
-        post_req.end();
-        break;
-//res.redirect('/user/token?'+querystring.stringify(query));
-    case '4':
-        test = {status: 'new'};
-        res.redirect(req.query.page+'?access_token='+req.query.access_token);
-    }
-});
-
-
-
 // development only
 if ('development' == app.get('env')) {
   app.use(errorHandler());
 }
-
-function mkFields(params) {
-  var fields={};
-  for(var i in params) {
-    if(params[i].html) {
-      fields[i] = {};
-      fields[i].label = params[i].label||(i.charAt(0).toUpperCase()+i.slice(1)).replace(/_/g, ' ');
-      switch(params[i].html) {
-    case 'password':
-      fields[i].html = '<input class="form-control" type="password" id="'+i+'" name="'+i+'" placeholder="'+fields[i].label+'"'+(params[i].mandatory?' required':'')+'/>';
-      break;
-    case 'date':
-      fields[i].html = '<input class="form-control" type="date" id="'+i+'" name="'+i+'"'+(params[i].mandatory?' required':'')+'/>';
-      break;
-    case 'hidden':
-      fields[i].html = '<input class="form-control" type="hidden" id="'+i+'" name="'+i+'"/>';
-      fields[i].label = false;
-      break;
-    case 'fixed':
-      fields[i].html = '<span class="form-control">'+params[i].value+'</span>';
-      break;
-    case 'radio':
-      fields[i].html = '';
-      for(var j=0; j<params[i].ops; j++) {
-        fields[i].html += '<input class="form-control" type="radio" id="'+i+'_'+j+'" name="'+i+'" '+(params[i].mandatory?' required':'')+'/> '+params[i].ops[j];
-      }
-    break;
-    default:
-      fields[i].html = '<input class="form-control" type="text" id="'+i+'" name="'+i+'" placeholder="'+fields[i].label+'"'+(params[i].mandatory?' required':'')+'/>';
-      break;
-      }
-    }
-  }
-  return fields;
-}
-
- var clearErrors = function(req, res, next) {
-   delete req.session.error;
-   next();
- };
 
 repository.init({}, function (err) {
   if (err) {

@@ -106,6 +106,27 @@ module.exports = {
         callback(null, vm.toJSON());
       })
     });
+  },
+
+  destroy: function(data, callback) {
+    if (!data.id) {
+      return callback(new Error('Please pass in an id!'));
+    }
+
+    repo.get(data.id, function (err, vm) {
+      if (err) {
+        return callback(err);
+      }
+
+      vm.destroy();
+
+      repo.commit(vm, function (err, vm) {
+        if (err) {
+          return callback(err);
+        }
+        callback(null, vm.toJSON());
+      })
+    });
   }
 
 };
