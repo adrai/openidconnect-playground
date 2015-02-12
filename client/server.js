@@ -70,7 +70,7 @@ var strat = new OpenIDConnectStrategy({
 
   userInfoURL:      'http://localhost:3000/userinfo',
 
-  //keyFile: __dirname + '/../anvil/keys/public.pem',
+  keyFile: __dirname + '/../anvil/keys/public.pem',
   //keyFile: __dirname + '/nevis.pem',
 
   clientID:         '110bb6e0-0bda-44f9-a724-dbe55176b8c0',

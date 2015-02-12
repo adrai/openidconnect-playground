@@ -31,7 +31,7 @@
     "errorhandler": "*",
     "express": "^4.0.0",
     "express-session": "*",
-    "jwt-simple": "0.1.0",
+    "jsjws": "^0.7.1",
     "lodash": "*",
     "node-uuid": "^1.4.2",
     "pwd": "0.0.4",

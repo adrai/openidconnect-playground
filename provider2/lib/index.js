@@ -3,7 +3,9 @@ var querystring = require('querystring'),
   _ = require('lodash'),
   url = require('url'),
   async = require('async'),
-  jwt = require('jwt-simple'),
+  jsjws = require('jsjws'),
+  path = require('path'),
+  fs = require('fs'),
   util = require("util"),
   base64url = require('base64url'),
   db = require('./db');
@@ -20,6 +22,10 @@ var defaults = {
     offline_access: 'Grants access to the End-User\'s UserInfo Endpoint even when the End-User is not present (not logged in).'
   }
 };
+
+function getKey(url) {
+  return jsjws.createPrivateKey(fs.readFileSync(url, {encoding: 'utf8'}).toString('ascii'), 'utf8');
+}
 
 function parse_authorization(authorization) {
   if (!authorization) {
@@ -45,7 +51,6 @@ function parse_authorization(authorization) {
 }
 
 function OpenIDConnect(options) {
-
   this.settings = _.defaults(options, defaults);
   this.settings.scopes = _.defaults(options.scopes, defaults.scopes);
 
@@ -60,6 +65,8 @@ function OpenIDConnect(options) {
       }
     }
   };
+
+  this.idTokenKey = getKey(path.join(__dirname, '../../anvil/keys/private.pem'));
 }
 
 OpenIDConnect.prototype.errorHandle = function (res, uri, error, desc) {
@@ -405,9 +412,9 @@ OpenIDConnect.prototype.auth = function () {
                 resp = _.extend(resp, results[i] || {});
               }
               if (resp.access_token && resp.id_token) {
-                var hbuf = crypto.createHmac('sha256', req.session.client_secret).update(resp.access_token).digest();
+                var hbuf = crypto.createHmac('sha256', self.idTokenKey).update(resp.access_token).digest();
                 resp.id_token.ht_hash = base64url(hbuf.toString('ascii', 0, hbuf.length / 2));
-                resp.id_token = jwt.encode(resp.id_token, req.session.client_secret);
+                resp.id_token = new jsjws.JWS().generateJWSByKey({alg: 'RS256'}, resp.id_token, self.idTokenKey);
               }
 
               callback(null, {params: params, type: params.response_type != 'code' ? 'f' : 'q', resp: resp});
@@ -722,17 +729,19 @@ OpenIDConnect.prototype.token = function () {
                   exp: d + 3600,
                   iat: d
                 };
+
+                var signedIdToken = new jsjws.JWS().generateJWSByKey({alg: 'RS256'}, id_token, self.idTokenKey);
                 db.accesses.create({
-                    token: access,
-                    type: 'Bearer',
-                    expiresIn: 3600,
-                    user: prev.user || null,
-                    client: prev.client.id,
-                    idToken: jwt.encode(id_token, prev.client.secret),
-                    scopes: prev.scopes,
-                    auth: prev.auth ? prev.auth.id : null
-                  },
-                  function (err, access) {
+                  token: access,
+                  type: 'Bearer',
+                  expiresIn: 3600,
+                  user: prev.user || null,
+                  client: prev.client.id,
+                  idToken: signedIdToken,
+                  scopes: prev.scopes,
+                  auth: prev.auth ? prev.auth.id : null
+                },
+                function (err, access) {
                     if (!err && access) {
                       if (prev.auth) {
                         prev.auth.status = 'used';

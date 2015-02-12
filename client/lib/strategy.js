@@ -56,6 +56,10 @@ function Strategy(options, verify) {
   OpenIDConnectStrategy.call(this, options, verify);
   this.name = 'openidconnect';
 
+  if (!this._keyFile) {
+    throw new Error('Please define a path to the public key file');
+  }
+
   //this._verifyTokenURL = options.verifyTokenURL;
 }
 
