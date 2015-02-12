@@ -1,3 +1,5 @@
+'use strict';
+
 var querystring = require('querystring'),
   crypto = require('crypto'),
   _ = require('lodash'),
@@ -6,7 +8,7 @@ var querystring = require('querystring'),
   jsjws = require('jsjws'),
   path = require('path'),
   fs = require('fs'),
-  util = require("util"),
+  util = require('util'),
   base64url = require('base64url'),
   db = require('./db');
 
@@ -55,14 +57,12 @@ function OpenIDConnect(options) {
   this.settings.scopes = _.defaults(options.scopes, defaults.scopes);
 
   var self = this;
-  this.settings.policies = {
-    loggedIn: function (req, res, next) {
-      if (req.session.user) {
-        next();
-      } else {
-        var q = req.parsedParams ? req.path + '?' + querystring.stringify(req.parsedParams) : req.originalUrl;
-        res.redirect(self.settings.login_url + '?' + querystring.stringify({return_url: q}));
-      }
+  this.loggedIn = function (req, res, next) {
+    if (req.session.user) {
+      next();
+    } else {
+      var q = req.parsedParams ? req.path + '?' + querystring.stringify(req.parsedParams) : req.originalUrl;
+      res.redirect(self.settings.login_url + '?' + querystring.stringify({return_url: q}));
     }
   };
 
@@ -139,7 +139,7 @@ OpenIDConnect.prototype.parseParams = function (req, res, spec) {
  *
  * returns a function to be placed as middleware in connect/express routing methods. For example:
  *
- * app.post('/login', oidc.login(),  afterLogin, loginErrorHandler);
+ * app.post('/login', oidc.login(), afterLogin, loginErrorHandler);
  *
  * This calls verification strategy and creates session.
  * Verification strategy must have two parameters: req and callback function with two parameters: error and user
@@ -212,7 +212,7 @@ OpenIDConnect.prototype.auth = function () {
     function (req, res, next) {
       self.endpointParams(spec, req, res, next);
     },
-    this.settings.policies.loggedIn,
+    this.loggedIn,
     function (req, res, next) {
       var params = req.parsedParams;
       async.waterfall([
@@ -552,22 +552,6 @@ OpenIDConnect.prototype.token = function () {
               //Client is trying to exchange an authorization code for an access token
               case "authorization_code":
 
-                //Extra checks, required if grant_type is 'authorization_code'
-                function extraCheck (obj) {
-                  //Step 3: check if grant_type is valid
-
-                  if (obj.auth.responseType != 'code') {
-                    callback({type: 'error', error: 'unauthorized_client', msg: 'Client cannot use this grant type.'});
-                  }
-
-                  //Step 4: check if redirect_uri is valid
-                  if ((obj.auth.redirectUri || params.redirect_uri) && obj.auth.redirectUri != params.redirect_uri) {
-                    callback({type: 'error', error: 'invalid_grant', msg: 'Redirection URI does not match.'});
-                  }
-
-                  callback(null, obj);
-                }
-
                 //Step 2: check if code is valid and not used previously
                 db.auths.getByCode(params.code, function (err, auth) {
                   if (!err && auth) {
@@ -590,13 +574,27 @@ OpenIDConnect.prototype.token = function () {
                       });
                     } else {
                       //obj.auth = a;
-                      extraCheck({
+
+                      var obj = {
                         auth: auth,
                         scopes: auth.scopes,
                         client: client,
                         user: auth.user,
                         sub: auth.sub
-                      });
+                      };
+                      //Extra checks, required if grant_type is 'authorization_code'
+
+                      //Step 3: check if grant_type is valid
+                      if (obj.auth.responseType != 'code') {
+                        return callback({type: 'error', error: 'unauthorized_client', msg: 'Client cannot use this grant type.'});
+                      }
+
+                      //Step 4: check if redirect_uri is valid
+                      if ((obj.auth.redirectUri || params.redirect_uri) && obj.auth.redirectUri != params.redirect_uri) {
+                        return callback({type: 'error', error: 'invalid_grant', msg: 'Redirection URI does not match.'});
+                      }
+
+                      callback(null, obj);
                     }
                   } else {
                     callback({type: 'error', error: 'invalid_grant', msg: 'Authorization code is invalid.'});
@@ -606,31 +604,6 @@ OpenIDConnect.prototype.token = function () {
 
               //Client is trying to exchange a refresh token for an access token
               case "refresh_token":
-
-                //Extra check
-                function extraCheck (obj) {
-                  if (params.scope) {
-                    var scopes = params.scope.split(' ');
-                    if (scopes.length) {
-                      for (var s = 0, sLen = scopes.length; s < sLen; s++) {
-                        var scope = scopes[s];
-                        if (obj.auth.scope.indexOf(scope) == -1) {
-                          return callback({
-                            type: 'error',
-                            uri: params.redirect_uri,
-                            error: 'invalid_scope',
-                            msg: 'Scope ' + scope + ' was not granted for this token.'
-                          });
-                        }
-                      }
-                      obj.scope = scopes;
-                    }
-                  } else {
-                    obj.scope = obj.auth.scope;
-                  }
-
-                  callback(null, obj);
-                }
 
                 //Step 3: check if refresh token is valid and not used previously
                 db.refreshes.getByToken(params.refresh_token, function (err, refresh) {
@@ -648,7 +621,33 @@ OpenIDConnect.prototype.token = function () {
                       } else {
                         refresh.status = 'used';
                         db.refreshes.update(refresh, function (err) { console.log(err); });
-                        extraCheck({auth: auth, client: client, user: auth.user, sub: auth.sub});
+                        var obj = {
+                          auth: auth,
+                          client: client,
+                          user: auth.user,
+                          sub: auth.sub
+                        };
+                        if (params.scope) {
+                          var scopes = params.scope.split(' ');
+                          if (scopes.length) {
+                            for (var s = 0, sLen = scopes.length; s < sLen; s++) {
+                              var scope = scopes[s];
+                              if (obj.auth.scope.indexOf(scope) == -1) {
+                                return callback({
+                                  type: 'error',
+                                  uri: params.redirect_uri,
+                                  error: 'invalid_scope',
+                                  msg: 'Scope ' + scope + ' was not granted for this token.'
+                                });
+                              }
+                            }
+                            obj.scope = scopes;
+                          }
+                        } else {
+                          obj.scope = obj.auth.scope;
+                        }
+
+                        callback(null, obj);
                       }
                     });
                   } else {
@@ -802,7 +801,7 @@ OpenIDConnect.prototype.check = function () {
     scopes = [scopes];
   }
   var self = this;
-  spec = {
+  var spec = {
     access_token: false
   };
 
@@ -896,6 +895,8 @@ OpenIDConnect.prototype.userInfo = function () {
         if (req.check.scopes.indexOf('profile') != -1) {
           user.sub = req.session.sub || req.session.user;
           delete user.password;
+          delete user._hash;
+          delete user.commitStamp;
           res.json(user);
         } else {
           res.json({email: user.email});
@@ -965,10 +966,6 @@ OpenIDConnect.prototype.removetokens = function () {
   ];
 };
 
-module.exports.oidc = function (options) {
+module.exports = function (options) {
   return new OpenIDConnect(options);
-};
-
-module.exports.defaults = function () {
-  return defaults;
 };

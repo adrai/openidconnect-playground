@@ -20,11 +20,14 @@ repository.init({ type: 'inmemory' }, function (err) {
     return console.log(err);
   }
 
+  var ownClients = [
+    '110bb6e0-0bda-44f9-a724-dbe55176b8c0'
+  ];
+
   var db = require('./lib/db');
 
-
   (function fillDbWithData() {
-    var key = '110bb6e0-0bda-44f9-a724-dbe55176b8c0';
+    var key = ownClients[0];
     db.clients.getByKey(key, function(err, client) {
       function addClient (usr) {
         var data = {
@@ -83,7 +86,8 @@ repository.init({ type: 'inmemory' }, function (err) {
       bar: 'Access to bar special resource'
     }
   };
-  var oidc = require('./lib/index').oidc(options);
+
+  var oidc = require('./lib/oidc')(options);
 
   // all environments
   app.set('port', process.env.PORT || 3000);
@@ -94,7 +98,11 @@ repository.init({ type: 'inmemory' }, function (err) {
 
   //redirect to login
   app.get('/', function(req, res) {
-    res.redirect('/my/login');
+    if (req.session.user) {
+      res.redirect('/client');
+    } else {
+      res.redirect('/my/login');
+    }
   });
 
   //Login form (I use email as user name)
@@ -162,7 +170,7 @@ repository.init({ type: 'inmemory' }, function (err) {
   app.post('/token', oidc.token());
 
   //user consent form
-  app.get('/user/consent', oidc.settings.policies.loggedIn, function(req, res, next) {
+  app.get('/user/consent', oidc.loggedIn, function(req, res, next) {
     var head = '<head><title>Consent</title></head>';
     var lis = [];
     for(var i in req.session.scopes) {
@@ -234,8 +242,21 @@ repository.init({ type: 'inmemory' }, function (err) {
             req.session.error=err?err:'User could not be created.';
             res.redirect(req.path);
           } else {
-            req.session.user = user.id;
-            res.redirect('/user');
+            db.clients.getByKey(ownClients[0], function (err, client) {
+              db.consents.create({
+                user: user.id,
+                client: client.id,
+                scopes: ['openid', 'profile']
+              }, function (err, consent) {
+                if(!err && consent) {
+                  req.session.user = user.id;
+                  res.redirect('/user');
+                } else {
+                  req.session.error=err?err:'Consent could not be created.';
+                  res.redirect(req.path);
+                }
+              });
+            });
           }
         });
       }
@@ -337,9 +358,9 @@ repository.init({ type: 'inmemory' }, function (err) {
     });
   });
 
-  app.get('/client', function(req, res, next){
+  app.get('/client', oidc.loggedIn, function(req, res, next){
     var head ='<h1>Clients Page</h1><div><a href="/client/register"/>Register new client</a></div>';
-    db.clients.getByUser(req.session.user, function(err, clients){
+    db.clients.findByUser(req.session.user, function(err, clients){
       var body = ["<ul>"];
       clients.forEach(function(client) {
         body.push('<li><a href="/client/'+client.id+'">'+client.name+'</li>');

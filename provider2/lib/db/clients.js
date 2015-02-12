@@ -3,6 +3,8 @@
 var path = require('path'),
   repository = require('../repository').repository(),
   uuid = require('node-uuid').v4,
+  async = require('async'),
+  consents = require('./consents'),
   repo = repository.extend({
     collectionName: path.basename(__filename, '.js'),
     indexes: ['key', 'secret']
@@ -38,6 +40,19 @@ module.exports = {
         return callback(null, vms[0].toJSON());
       }
       callback(null, null);
+    });
+  },
+
+  findByUser: function(user, callback) {
+    var self = this;
+    consents.findByUser(user, function (err, consents) {
+      if (err) {
+        return callback(err);
+      }
+
+      async.map(consents, function (consent, callback) {
+        self.getById(consent.client, callback);
+      }, callback);
     });
   },
 

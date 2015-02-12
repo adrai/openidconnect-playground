@@ -59,8 +59,6 @@ function Strategy(options, verify) {
   if (!this._keyFile) {
     throw new Error('Please define a path to the public key file');
   }
-
-  //this._verifyTokenURL = options.verifyTokenURL;
 }
 
 /**

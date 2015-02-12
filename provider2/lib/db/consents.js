@@ -14,6 +14,15 @@ var path = require('path'),
 
 module.exports = {
 
+  findByUser: function(userId, callback) {
+    repo.find({ user: userId }, function (err, vms) {
+      if (err) {
+        return callback(err);
+      }
+      callback(null, vms.toJSON());
+    });
+  },
+
   getByUserAndClient: function(userId, clientId, callback) {
     repo.find({ user: userId, client: clientId }, function (err, vms) {
       if (err) {
