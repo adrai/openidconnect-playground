@@ -1,9 +1,8 @@
 var querystring = require('querystring'),
   crypto = require('crypto'),
   _ = require('lodash'),
-  extend = require('extend'),
   url = require('url'),
-  Q = require('q'),
+  async = require('async'),
   jwt = require('jwt-simple'),
   util = require("util"),
   base64url = require('base64url'),
@@ -46,7 +45,9 @@ function parse_authorization(authorization) {
 }
 
 function OpenIDConnect(options) {
-  this.settings = extend(true, {}, defaults, options);
+
+  this.settings = _.defaults(options, defaults);
+  this.settings.scopes = _.defaults(options.scopes, defaults.scopes);
 
   var self = this;
   this.settings.policies = {
@@ -206,221 +207,221 @@ OpenIDConnect.prototype.auth = function () {
     },
     this.settings.policies.loggedIn,
     function (req, res, next) {
-      Q(req.parsedParams).then(function (params) {
-        //Step 2: Check if response_type is supported and client_id is valid.
-
-        var deferred = Q.defer();
-        switch (params.response_type) {
-          case 'none':
-          case 'code':
-          case 'token':
-          case 'id_token':
-            break;
-          default:
-            //var error = false;
-            var sp = params.response_type.split(' ');
-            sp.forEach(function (response_type) {
-              if (['code', 'token', 'id_token'].indexOf(response_type) == -1) {
-                throw {
-                  type: 'error',
-                  uri: params.redirect_uri,
-                  error: 'unsupported_response_type',
-                  msg: 'Response type ' + response_type + ' not supported.'
-                };
-              }
-            });
-        }
-        db.clients.getByKey(params.client_id, function (err, model) {
-          if (err || !model || model === '') {
-            deferred.reject({
-              type: 'error',
-              uri: params.redirect_uri,
-              error: 'invalid_client',
-              msg: 'Client ' + params.client_id + ' doesn\'t exist.'
-            });
-          } else {
-            req.session.client_id = model.id;
-            req.session.client_secret = model.secret;
-            deferred.resolve(params);
+      var params = req.parsedParams;
+      async.waterfall([
+        function (callback) {
+          //Step 1: Check if response_type is supported and client_id is valid.
+          switch (params.response_type) {
+            case 'none':
+            case 'code':
+            case 'token':
+            case 'id_token':
+              break;
+            default:
+              //var error = false;
+              var sp = params.response_type.split(' ');
+              sp.forEach(function (response_type) {
+                if (['code', 'token', 'id_token'].indexOf(response_type) == -1) {
+                  throw {
+                    type: 'error',
+                    uri: params.redirect_uri,
+                    error: 'unsupported_response_type',
+                    msg: 'Response type ' + response_type + ' not supported.'
+                  };
+                }
+              });
           }
-        });
-
-        return deferred.promise;
-      }).then(function (params) {
-        //Step 3: Check if scopes are valid, and if consent was given.
-
-        var deferred = Q.defer();
-        var reqsco = params.scope.split(' ');
-        req.session.scopes = {};
-        var promises = [];
-        db.consents.getByUserAndClient(req.session.user, req.session.client_id, function (err, consent) {
-          reqsco.forEach(function (scope) {
-            var innerDef = Q.defer();
-            if (!self.settings.scopes[scope]) {
-              innerDef.reject({
+          db.clients.getByKey(params.client_id, function (err, model) {
+            if (err || !model || model === '') {
+              callback({
                 type: 'error',
                 uri: params.redirect_uri,
-                error: 'invalid_scope',
-                msg: 'Scope ' + scope + ' not supported.'
-              });
-            }
-            if (!consent) {
-              req.session.scopes[scope] = {ismember: false, explain: self.settings.scopes[scope]};
-              innerDef.resolve(true);
-            } else {
-              var inScope = consent.scopes.indexOf(scope) !== -1;
-              req.session.scopes[scope] = {ismember: inScope, explain: self.settings.scopes[scope]};
-              innerDef.resolve(!inScope);
-            }
-            promises.push(innerDef.promise);
-          });
-
-          Q.allSettled(promises).then(function (results) {
-            var redirect = false;
-            for (var i = 0; i < results.length; i++) {
-              if (results[i].value) {
-                redirect = true;
-                break;
-              }
-            }
-            if (redirect) {
-              req.session.client_key = params.client_id;
-              var q = req.path + '?' + querystring.stringify(params);
-              deferred.reject({
-                type: 'redirect',
-                uri: self.settings.consent_url + '?' + querystring.stringify({return_url: q})
+                error: 'invalid_client',
+                msg: 'Client ' + params.client_id + ' doesn\'t exist.'
               });
             } else {
-              deferred.resolve(params);
+              req.session.client_id = model.id;
+              req.session.client_secret = model.secret;
+              callback(null, params);
             }
           });
-        });
+        },
 
-        return deferred.promise;
-      }).then(function (params) {
-        //Step 5: create responses
-        if (params.response_type == 'none') {
-          return {params: params, resp: {}};
-        } else {
-          var deferred = Q.defer();
-          var promises = [];
-
-          var rts = params.response_type.split(' ');
-
-          rts.forEach(function (rt) {
-            var def = Q.defer();
-            promises.push(def.promise);
-            switch (rt) {
-              case 'code':
-                var createToken = function () {
-                  var token = crypto.createHash('md5').update(params.client_id).update(Math.random() + '').digest('hex');
-                  db.auths.getByCode(token, function (err, auth) {
-                    if (!auth) {
-                      setToken(token);
-                    } else {
-                      createToken();
-                    }
-                  });
-                };
-                var setToken = function (token) {
-                  db.auths.create({
-                    client: req.session.client_id,
-                    scopes: params.scope.split(' '),
-                    user: req.session.user,
-                    sub: req.session.sub || req.session.user,
-                    code: token,
-                    redirectUri: params.redirect_uri,
-                    responseType: params.response_type,
-                    status: 'created'
-                  }, function (err, auth) {
-                    if (!err && auth) {
-                      setTimeout(function () {
-                        db.auths.getByCode(token, function (err, auth) {
-                          if (auth && auth.status == 'created') {
-                            db.auths.destroy(auth, function (err) { console.log(err); });
-                          }
-                        });
-                      }, 1000 * 60 * 10); //10 minutes
-                      def.resolve({code: token});
-                    } else {
-                      def.reject(err || 'Could not create auth');
-                    }
-                  });
-
-                };
-                createToken();
-                break;
-              case 'id_token':
-                var d = Math.round(new Date().getTime() / 1000);
-                //var id_token = {
-                def.resolve({
-                  id_token: {
-                    iss: req.protocol + '://' + req.headers.host,
-                    sub: req.session.sub || req.session.user,
-                    aud: params.client_id,
-                    exp: d + 3600,
-                    iat: d,
-                    nonce: params.nonce
-                  }
+        function (params, callback) {
+          //Step 2: Check if scopes are valid, and if consent was given.
+          var reqsco = params.scope.split(' ');
+          req.session.scopes = {};
+          db.consents.getByUserAndClient(req.session.user, req.session.client_id, function (err, consent) {
+            async.map(reqsco, function (scope, callback) {
+              if (!self.settings.scopes[scope]) {
+                return callback({
+                  type: 'error',
+                  uri: params.redirect_uri,
+                  error: 'invalid_scope',
+                  msg: 'Scope ' + scope + ' not supported.'
                 });
-                //def.resolve({id_token: jwt.encode(id_token, req.session.client_secret)});
-                break;
-              case 'token':
-                var createToken = function () {
-                  var token = crypto.createHash('md5').update(params.client_id).update(Math.random() + '').digest('hex');
-                  db.accesses.getByToken(token, function (err, access) {
-                    if (!access) {
-                      setToken(token);
-                    } else {
-                      createToken();
-                    }
-                  });
-                };
-                var setToken = function (token) {
-                  var obj = {
-                    token: token,
-                    type: 'Bearer',
-                    expiresIn: 3600,
-                    user: req.session.user,
-                    client: req.session.client_id,
-                    scopes: params.scope.split(' ')
+              }
+              if (!consent) {
+                req.session.scopes[scope] = {ismember: false, explain: self.settings.scopes[scope]};
+                callback(null, true);
+              } else {
+                var inScope = consent.scopes.indexOf(scope) !== -1;
+                req.session.scopes[scope] = {ismember: inScope, explain: self.settings.scopes[scope]};
+                callback(null, !inScope);
+              }
+            }, function (err, results) {
+              if (err) {
+                return callback(err);
+              }
+
+              var redirect = false;
+              for (var i = 0; i < results.length; i++) {
+                if (results[i]) {
+                  redirect = true;
+                  break;
+                }
+              }
+              if (redirect) {
+                req.session.client_key = params.client_id;
+                var q = req.path + '?' + querystring.stringify(params);
+                callback({
+                  type: 'redirect',
+                  uri: self.settings.consent_url + '?' + querystring.stringify({return_url: q})
+                });
+              } else {
+                callback(null, params);
+              }
+            });
+          });
+        },
+
+        function (params, callback) {
+          //Step 3: create responses
+          if (params.response_type == 'none') {
+            return {params: params, resp: {}};
+          } else {
+            var rts = params.response_type.split(' ');
+
+            async.map(rts, function (rt, callback) {
+              switch (rt) {
+                case 'code':
+                  var createToken = function () {
+                    var token = crypto.createHash('md5').update(params.client_id).update(Math.random() + '').digest('hex');
+                    db.auths.getByCode(token, function (err, auth) {
+                      if (!auth) {
+                        setToken(token);
+                      } else {
+                        createToken();
+                      }
+                    });
                   };
-                  db.accesses.create(obj, function (err, access) {
-                    if (!err && access) {
-                      setTimeout(function () {
-                        access.destroy();
-                      }, 1000 * 3600); //1 hour
+                  var setToken = function (token) {
+                    db.auths.create({
+                      client: req.session.client_id,
+                      scopes: params.scope.split(' '),
+                      user: req.session.user,
+                      sub: req.session.sub || req.session.user,
+                      code: token,
+                      redirectUri: params.redirect_uri,
+                      responseType: params.response_type,
+                      status: 'created'
+                    }, function (err, auth) {
+                      if (!err && auth) {
+                        setTimeout(function () {
+                          db.auths.getByCode(token, function (err, auth) {
+                            if (auth && auth.status == 'created') {
+                              db.auths.destroy(auth, function (err) { console.log(err); });
+                            }
+                          });
+                        }, 1000 * 60 * 10); //10 minutes
+                        callback(null, {code: token});
+                      } else {
+                        callback(err || 'Could not create auth');
+                      }
+                    });
 
-                      def.resolve({
-                        access_token: obj.token,
-                        token_type: obj.type,
-                        expires_in: obj.expiresIn
-                      });
+                  };
+                  createToken();
+                  break;
+                case 'id_token':
+                  var d = Math.round(new Date().getTime() / 1000);
+                  //var id_token = {
+                  callback(null, {
+                    id_token: {
+                      iss: req.protocol + '://' + req.headers.host,
+                      sub: req.session.sub || req.session.user,
+                      aud: params.client_id,
+                      exp: d + 3600,
+                      iat: d,
+                      nonce: params.nonce
                     }
                   });
-                };
-                createToken();
-                break;
-            }
-          });
+                  //callback(null, {id_token: jwt.encode(id_token, req.session.client_secret)});
+                  break;
+                case 'token':
+                  var createToken = function () {
+                    var token = crypto.createHash('md5').update(params.client_id).update(Math.random() + '').digest('hex');
+                    db.accesses.getByToken(token, function (err, access) {
+                      if (!access) {
+                        setToken(token);
+                      } else {
+                        createToken();
+                      }
+                    });
+                  };
+                  var setToken = function (token) {
+                    var obj = {
+                      token: token,
+                      type: 'Bearer',
+                      expiresIn: 3600,
+                      user: req.session.user,
+                      client: req.session.client_id,
+                      scopes: params.scope.split(' ')
+                    };
+                    db.accesses.create(obj, function (err, access) {
+                      if (!err && access) {
+                        setTimeout(function () {
+                          access.destroy();
+                        }, 1000 * 3600); //1 hour
 
-          Q.allSettled(promises).then(function (results) {
-            var resp = {};
-            for (var i in results) {
-              resp = extend(resp, results[i].value || {});
-            }
-            if (resp.access_token && resp.id_token) {
-              var hbuf = crypto.createHmac('sha256', req.session.client_secret).update(resp.access_token).digest();
-              resp.id_token.ht_hash = base64url(hbuf.toString('ascii', 0, hbuf.length / 2));
-              resp.id_token = jwt.encode(resp.id_token, req.session.client_secret);
-            }
-            deferred.resolve({params: params, type: params.response_type != 'code' ? 'f' : 'q', resp: resp});
-          });
+                        callback(null, {
+                          access_token: obj.token,
+                          token_type: obj.type,
+                          expires_in: obj.expiresIn
+                        });
+                      }
+                    });
+                  };
+                  createToken();
+                  break;
+              }
+            }, function (err, results) {
+              if (err) {
+                return callback(err);
+              }
 
-          return deferred.promise;
+              var resp = {};
+              for (var i in results) {
+                resp = _.extend(resp, results[i] || {});
+              }
+              if (resp.access_token && resp.id_token) {
+                var hbuf = crypto.createHmac('sha256', req.session.client_secret).update(resp.access_token).digest();
+                resp.id_token.ht_hash = base64url(hbuf.toString('ascii', 0, hbuf.length / 2));
+                resp.id_token = jwt.encode(resp.id_token, req.session.client_secret);
+              }
+
+              callback(null, {params: params, type: params.response_type != 'code' ? 'f' : 'q', resp: resp});
+            });
+          }
         }
-      })
-        .then(function (obj) {
+      ], function (err, obj) {
+        if (err) {
+          if (err.type == 'error') {
+            self.errorHandle(res, err.uri, err.error, err.msg);
+          } else {
+            res.redirect(err.uri);
+          }
+        } else {
           var params = obj.params;
           var resp = obj.resp;
           var uri = url.parse(params.redirect_uri, true);
@@ -435,14 +436,8 @@ OpenIDConnect.prototype.auth = function () {
             }
             res.redirect(url.format(uri));
           }
-        })
-        .fail(function (error) {
-          if (error.type == 'error') {
-            self.errorHandle(res, error.uri, error.error, error.msg);
-          } else {
-            res.redirect(error.uri);
-          }
-        });
+        }
+      });
     }
   ];
 };
@@ -529,250 +524,250 @@ OpenIDConnect.prototype.token = function () {
         self.errorHandle(res, params.redirect_uri, 'invalid_client', 'No client credentials found.');
       } else {
 
-        Q.fcall(function () {
-          //Step 2: check if client and secret are valid
-          var deferred = Q.defer();
-          db.clients.getByKeyAndSecret(client_key, client_secret, function (err, client) {
-            if (err || !client) {
-              deferred.reject({
-                type: 'error',
-                error: 'invalid_client',
-                msg: 'Client doesn\'t exist or invalid secret.'
-              });
-            } else {
-              deferred.resolve(client);
-            }
-          });
-          return deferred.promise;
-        })
-          .then(function (client) {
+        async.waterfall([
+          function (callback) {
+            //Step 1: check if client and secret are valid
+            db.clients.getByKeyAndSecret(client_key, client_secret, function (err, client) {
+              if (err || !client) {
+                callback({
+                  type: 'error',
+                  error: 'invalid_client',
+                  msg: 'Client doesn\'t exist or invalid secret.'
+                });
+              } else {
+                callback(null, client);
+              }
+            });
+          },
 
-            var deferred = Q.defer();
-
+          function (client, callback) {
             switch (params.grant_type) {
               //Client is trying to exchange an authorization code for an access token
               case "authorization_code":
-                //Step 3: check if code is valid and not used previously
-                db.auths.getByCode(params.code, function (err, auth) {
-                    if (!err && auth) {
-                      if (auth.status != 'created') {
-                        if (auth.refresh) {
-                          auth.refresh.forEach(function (refresh) {
-                            db.refreshes.destroy(refresh, function (err) { console.log(err); });
-                          });
-                        }
-                        if (auth.access) {
-                          auth.access.forEach(function (access) {
-                            db.accesses.destroy(access, function (err) { console.log(err); });
-                          });
-                        }
-                        db.auths.destroy(auth, function (err) { console.log(err); });
-                        deferred.reject({
-                          type: 'error',
-                          error: 'invalid_grant',
-                          msg: 'Authorization code already used.'
-                        });
-                      } else {
-                        //obj.auth = a;
-                        deferred.resolve({
-                          auth: auth,
-                          scopes: auth.scopes,
-                          client: client,
-                          user: auth.user,
-                          sub: auth.sub
-                        });
-                      }
-                    } else {
-                      deferred.reject({type: 'error', error: 'invalid_grant', msg: 'Authorization code is invalid.'});
-                    }
-                  });
 
                 //Extra checks, required if grant_type is 'authorization_code'
-                return deferred.promise.then(function (obj) {
-                  //Step 4: check if grant_type is valid
+                function extraCheck (obj) {
+                  //Step 3: check if grant_type is valid
 
                   if (obj.auth.responseType != 'code') {
-                    throw {type: 'error', error: 'unauthorized_client', msg: 'Client cannot use this grant type.'};
+                    callback({type: 'error', error: 'unauthorized_client', msg: 'Client cannot use this grant type.'});
                   }
 
-                  //Step 5: check if redirect_uri is valid
+                  //Step 4: check if redirect_uri is valid
                   if ((obj.auth.redirectUri || params.redirect_uri) && obj.auth.redirectUri != params.redirect_uri) {
-                    throw {type: 'error', error: 'invalid_grant', msg: 'Redirection URI does not match.'};
+                    callback({type: 'error', error: 'invalid_grant', msg: 'Redirection URI does not match.'});
                   }
 
-                  return obj;
-                });
+                  callback(null, obj);
+                }
 
+                //Step 2: check if code is valid and not used previously
+                db.auths.getByCode(params.code, function (err, auth) {
+                  if (!err && auth) {
+                    if (auth.status != 'created') {
+                      if (auth.refresh) {
+                        auth.refresh.forEach(function (refresh) {
+                          db.refreshes.destroy(refresh, function (err) { console.log(err); });
+                        });
+                      }
+                      if (auth.access) {
+                        auth.access.forEach(function (access) {
+                          db.accesses.destroy(access, function (err) { console.log(err); });
+                        });
+                      }
+                      db.auths.destroy(auth, function (err) { console.log(err); });
+                      callback({
+                        type: 'error',
+                        error: 'invalid_grant',
+                        msg: 'Authorization code already used.'
+                      });
+                    } else {
+                      //obj.auth = a;
+                      extraCheck({
+                        auth: auth,
+                        scopes: auth.scopes,
+                        client: client,
+                        user: auth.user,
+                        sub: auth.sub
+                      });
+                    }
+                  } else {
+                    callback({type: 'error', error: 'invalid_grant', msg: 'Authorization code is invalid.'});
+                  }
+                });
                 break;
 
               //Client is trying to exchange a refresh token for an access token
               case "refresh_token":
 
-                //Step 3: check if refresh token is valid and not used previously
-                db.refreshes.getByToken(params.refresh_token, function (err, refresh) {
-                  if (!err && refresh) {
-                    db.auths.getById(refresh.auth, function (err, auth) {
-                        if (refresh.status != 'created') {
-                          auth.access.forEach(function (access) {
-                            db.accesses.destroy(access, function (err) { console.log(err); });
-                          });
-                          auth.refresh.forEach(function (refresh) {
-                            db.refreshes.destroy(refresh, function (err) { console.log(err); });
-                          });
-                          db.auths.destroy(auth, function (err) { console.log(err); });
-                          deferred.reject({type: 'error', error: 'invalid_grant', msg: 'Refresh token already used.'});
-                        } else {
-                          refresh.status = 'used';
-                          db.refreshes.update(refresh, function (err) { console.log(err); });
-                          deferred.resolve({auth: auth, client: client, user: auth.user, sub: auth.sub});
-                        }
-                      });
-                  } else {
-                    deferred.reject({type: 'error', error: 'invalid_grant', msg: 'Refresh token is not valid.'});
-                  }
-                });
-                return deferred.promise.then(function (obj) {
+                //Extra check
+                function extraCheck (obj) {
                   if (params.scope) {
                     var scopes = params.scope.split(' ');
                     if (scopes.length) {
-                      scopes.forEach(function (scope) {
+                      for (var s = 0, sLen = scopes.length; s < sLen; s++) {
+                        var scope = scopes[s];
                         if (obj.auth.scope.indexOf(scope) == -1) {
-                          throw {
+                          return callback({
                             type: 'error',
                             uri: params.redirect_uri,
                             error: 'invalid_scope',
                             msg: 'Scope ' + scope + ' was not granted for this token.'
-                          };
+                          });
                         }
-                      });
+                      }
                       obj.scope = scopes;
                     }
                   } else {
                     obj.scope = obj.auth.scope;
                   }
 
-                  return obj;
+                  callback(null, obj);
+                }
+
+                //Step 3: check if refresh token is valid and not used previously
+                db.refreshes.getByToken(params.refresh_token, function (err, refresh) {
+                  if (!err && refresh) {
+                    db.auths.getById(refresh.auth, function (err, auth) {
+                      if (refresh.status != 'created') {
+                        auth.access.forEach(function (access) {
+                          db.accesses.destroy(access, function (err) { console.log(err); });
+                        });
+                        auth.refresh.forEach(function (refresh) {
+                          db.refreshes.destroy(refresh, function (err) { console.log(err); });
+                        });
+                        db.auths.destroy(auth, function (err) { console.log(err); });
+                        callback({type: 'error', error: 'invalid_grant', msg: 'Refresh token already used.'});
+                      } else {
+                        refresh.status = 'used';
+                        db.refreshes.update(refresh, function (err) { console.log(err); });
+                        extraCheck({auth: auth, client: client, user: auth.user, sub: auth.sub});
+                      }
+                    });
+                  } else {
+                    callback({type: 'error', error: 'invalid_grant', msg: 'Refresh token is not valid.'});
+                  }
                 });
                 break;
               case 'client_credentials':
                 if (!client.credentialsFlow) {
-                  deferred.reject({
+                  callback({
                     type: 'error',
                     error: 'unauthorized_client',
                     msg: 'Client cannot use this grant type.'
                   });
                 } else {
-                  deferred.resolve({scope: params.scope, auth: false, client: client});
+                  callback(null, {scope: params.scope, auth: false, client: client});
                 }
-                return deferred.promise;
                 break;
             }
+          },
 
-          })
-          .then(function (obj) {
+          function (obj, callback) {
             //Check if code was issued for client
             if (params.grant_type != 'client_credentials' && obj.client.key != client_key) {
-              throw {type: 'error', error: 'invalid_grant', msg: 'The code was not issued for this client.'};
+              callback({type: 'error', error: 'invalid_grant', msg: 'The code was not issued for this client.'});
             }
 
-            return obj;
+            callback(null, obj);
+          }
+        ], function (err, prev) {
+          if (err) {
+            if (err.type == 'error') {
+              self.errorHandle(res, params.redirect_uri, err.error, err.msg);
+            } else {
+              res.redirect(err.uri);
+            }
+            return;
+          }
 
-          })
-          .then(function (prev) {
-            //Create access token
-            /*var scopes = obj.scope;
-             var auth = obj.auth;*/
+          //Create access token
+          /*var scopes = obj.scope;
+           var auth = obj.auth;*/
 
-            var createToken = function (model, cb) {
-              var token = crypto.createHash('md5').update(Math.random() + '').digest('hex');
-              model.getByToken(token, function (err, response) {
-                if (!response) {
-                  cb(token);
-                } else {
-                  createToken(model, cb);
-                }
-              });
-            };
-            var setToken = function (access, refresh) {
-              db.refreshes.create({
-                  token: refresh,
-                  scopes: prev.scopes,
-                  status: 'created',
-                  auth: prev.auth ? prev.auth.id : null
-                },
-                function (err, refresh) {
-                  setTimeout(function () {
-                    db.refreshes.destroy(refresh, function (err) { console.log(err); });
-                    if (refresh.auth) {
-                      db.auths.getById(refresh.auth, function (err, auth) {
-                          if (!auth.access.length && !auth.refresh.length) {
-                            db.auths.destroy(auth, function (err) { console.log(err); });
-                          }
-                        });
-                    }
-                  }, 1000 * 3600 * 5); //5 hours
-
-                  var d = Math.round(new Date().getTime() / 1000);
-                  var id_token = {
-                    iss: req.protocol + '://' + req.headers.host,
-                    sub: prev.sub || prev.user || null,
-                    aud: prev.client.key,
-                    exp: d + 3600,
-                    iat: d
-                  };
-                  db.accesses.create({
-                      token: access,
-                      type: 'Bearer',
-                      expiresIn: 3600,
-                      user: prev.user || null,
-                      client: prev.client.id,
-                      idToken: jwt.encode(id_token, prev.client.secret),
-                      scopes: prev.scopes,
-                      auth: prev.auth ? prev.auth.id : null
-                    },
-                    function (err, access) {
-                      if (!err && access) {
-                        if (prev.auth) {
-                          prev.auth.status = 'used';
-                          db.auths.update(prev.auth, function (err) { console.log(err); });
-                        }
-
-                        setTimeout(function () {
-                          db.accesses.destroy(access, function (err) { console.log(err); });
-                          if (access.auth) {
-                            db.auths.getById(refresh.auth, function (err, auth) {
-                                if (!auth.access.length && !auth.refresh.length) {
-                                  db.auths.destroy(auth, function (err) { console.log(err); });
-                                }
-                              });
-                          }
-                        }, 1000 * 3600); //1 hour
-
-                        res.json({
-                          access_token: access.token,
-                          token_type: access.type,
-                          expires_in: access.expiresIn,
-                          refresh_token: refresh.token,
-                          id_token: access.idToken,
-                          state: req.body.state
-                        });
+          var createToken = function (model, cb) {
+            var token = crypto.createHash('md5').update(Math.random() + '').digest('hex');
+            model.getByToken(token, function (err, response) {
+              if (!response) {
+                cb(token);
+              } else {
+                createToken(model, cb);
+              }
+            });
+          };
+          var setToken = function (access, refresh) {
+            db.refreshes.create({
+                token: refresh,
+                scopes: prev.scopes,
+                status: 'created',
+                auth: prev.auth ? prev.auth.id : null
+              },
+              function (err, refresh) {
+                setTimeout(function () {
+                  db.refreshes.destroy(refresh, function (err) { console.log(err); });
+                  if (refresh.auth) {
+                    db.auths.getById(refresh.auth, function (err, auth) {
+                      if (!auth.access.length && !auth.refresh.length) {
+                        db.auths.destroy(auth, function (err) { console.log(err); });
                       }
                     });
-                });
-            };
-            createToken(db.accesses, function (access) {
-              createToken(db.refreshes, function (refresh) {
-                setToken(access, refresh);
+                  }
+                }, 1000 * 3600 * 5); //5 hours
+
+                var d = Math.round(new Date().getTime() / 1000);
+                var id_token = {
+                  iss: req.protocol + '://' + req.headers.host,
+                  sub: prev.sub || prev.user || null,
+                  aud: prev.client.key,
+                  exp: d + 3600,
+                  iat: d
+                };
+                db.accesses.create({
+                    token: access,
+                    type: 'Bearer',
+                    expiresIn: 3600,
+                    user: prev.user || null,
+                    client: prev.client.id,
+                    idToken: jwt.encode(id_token, prev.client.secret),
+                    scopes: prev.scopes,
+                    auth: prev.auth ? prev.auth.id : null
+                  },
+                  function (err, access) {
+                    if (!err && access) {
+                      if (prev.auth) {
+                        prev.auth.status = 'used';
+                        db.auths.update(prev.auth, function (err) { console.log(err); });
+                      }
+
+                      setTimeout(function () {
+                        db.accesses.destroy(access, function (err) { console.log(err); });
+                        if (access.auth) {
+                          db.auths.getById(refresh.auth, function (err, auth) {
+                            if (!auth.access.length && !auth.refresh.length) {
+                              db.auths.destroy(auth, function (err) { console.log(err); });
+                            }
+                          });
+                        }
+                      }, 1000 * 3600); //1 hour
+
+                      res.json({
+                        access_token: access.token,
+                        token_type: access.type,
+                        expires_in: access.expiresIn,
+                        refresh_token: refresh.token,
+                        id_token: access.idToken,
+                        state: req.body.state
+                      });
+                    }
+                  });
               });
+          };
+          createToken(db.accesses, function (access) {
+            createToken(db.refreshes, function (refresh) {
+              setToken(access, refresh);
             });
-          })
-          .fail(function (error) {
-            if (error.type == 'error') {
-              self.errorHandle(res, params.redirect_uri, error.error, error.msg);
-            } else {
-              res.redirect(error.uri);
-            }
           });
+        });
       }
     }];
 };
