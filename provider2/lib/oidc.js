@@ -343,7 +343,7 @@ OpenIDConnect.prototype.auth = function () {
                               db.auths.destroy(auth, function (err) { console.log(err); });
                             }
                           });
-                        }, self.options.authDuration);
+                        }, self.settings.authDuration);
                         callback(null, {code: token});
                       } else {
                         callback(err || 'Could not create auth');
@@ -392,7 +392,7 @@ OpenIDConnect.prototype.auth = function () {
                       if (!err && access) {
                         setTimeout(function () {
                           db.accesses.destroy(access.id, function (err) { console.log(err); });
-                        }, self.options.authDuration); //1 hour
+                        }, self.settings.authDuration); //1 hour
 
                         callback(null, {
                           access_token: obj.token,
@@ -721,7 +721,7 @@ OpenIDConnect.prototype.token = function () {
                       }
                     });
                   }
-                }, self.options.refreshDuration);
+                }, self.settings.refreshDuration);
 
                 var d = Math.round(new Date().getTime() / 1000);
                 var id_token = {
@@ -759,7 +759,7 @@ OpenIDConnect.prototype.token = function () {
                             }
                           });
                         }
-                      }, self.options.accessDuration);
+                      }, self.settings.accessDuration);
 
                       res.json({
                         access_token: access.token,
