@@ -935,11 +935,12 @@ OpenIDConnect.prototype.removetokens = function () {
       if (!params.access_token) {
         params.access_token = (req.headers['authorization'] || '').indexOf('Bearer ') === 0 ? req.headers['authorization'].replace('Bearer', '').trim() : false;
       }
-      if (params.access_token) {
+
+      function deleteByAccessToken (accToken, callback) {
         //Delete the provided access token, and other tokens issued to the user
-        db.accesses.getByToken(params.access_token, function (err, access) {
+        db.accesses.getByToken(accToken, function (err, access) {
           if (!err && access) {
-            db.auths.getByUser(access.user, function (err, auth) {
+            db.auths.findByUser(access.user, function (err, auth) {
               if (!err && auth) {
                 auth.accessTokens.forEach(function (access) {
                   db.accesses.destroy(access, function (err) { console.log(err); });
@@ -949,18 +950,41 @@ OpenIDConnect.prototype.removetokens = function () {
                 });
                 db.auths.destroy(auth, function (err) { console.log(err); });
               }
-              db.accesses.getByUser(access.user, function (err, accesses) {
+              db.accesses.findByUser(access.user, function (err, accesses) {
                 if (!err && accesses) {
                   accesses.forEach(function (access) {
                     db.accesses.destroy(access, function (err) { console.log(err); });
                   });
                 }
-                return next();
+                return callback();
               });
             });
           } else {
-            self.errorHandle(res, null, 'unauthorized_client', 'Access token is not valid.');
+            callback('unauthorized_client');
           }
+        });
+      }
+
+      if (params.access_token) {
+        deleteByAccessToken(params.access_token, function (err) {
+          if (err) {
+            return self.errorHandle(res, null, 'unauthorized_client', 'Access token is not valid.');
+          }
+          return next();
+        });
+      } else if (req.session.user) {
+        db.accesses.findByUser(req.session.user, function (err, accesses) {
+          if (err) {
+            return self.errorHandle(res, null, 'db_error', err);
+          }
+          async.each(accesses, function (access, callback) {
+            deleteByAccessToken(access.token, callback);
+          }, function (err) {
+            if (err) {
+              return self.errorHandle(res, null, 'unauthorized_client', 'Access token is not valid.');
+            }
+            return next();
+          });
         });
       } else {
         self.errorHandle(res, null, 'unauthorized_client', 'No access token found.');
