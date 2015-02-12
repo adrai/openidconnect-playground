@@ -33,8 +33,7 @@ repository.init({ type: 'inmemory' }, function (err) {
         var data = {
           name: 'ten',
           key: key,
-          secret: '123456789',
-          redirect_uris: ['http://localhost:3001/callback']
+          secret: '123456789'
         };
         db.clients.create(data, function(err, client){
           if(!err && client) {

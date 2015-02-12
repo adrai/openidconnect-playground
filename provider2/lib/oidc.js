@@ -15,6 +15,9 @@ var querystring = require('querystring'),
 var defaults = {
   login_url: '/login',
   consent_url: '/consent',
+  authDuration: 1000 * 60 * 10, //10 minutes
+  accessDuration: 1000 * 3600, //1 hour
+  refreshDuration: 1000 * 3600 * 5, //5 hours
   scopes: {
     openid: 'Informs the Authorization Server that the Client is making an OpenID Connect request.',
     profile: 'Access to the End-User\'s default profile Claims.',
@@ -340,7 +343,7 @@ OpenIDConnect.prototype.auth = function () {
                               db.auths.destroy(auth, function (err) { console.log(err); });
                             }
                           });
-                        }, 1000 * 60 * 10); //10 minutes
+                        }, self.options.authDuration);
                         callback(null, {code: token});
                       } else {
                         callback(err || 'Could not create auth');
@@ -388,8 +391,8 @@ OpenIDConnect.prototype.auth = function () {
                     db.accesses.create(obj, function (err, access) {
                       if (!err && access) {
                         setTimeout(function () {
-                          access.destroy();
-                        }, 1000 * 3600); //1 hour
+                          db.accesses.destroy(access.id, function (err) { console.log(err); });
+                        }, self.options.authDuration); //1 hour
 
                         callback(null, {
                           access_token: obj.token,
@@ -718,7 +721,7 @@ OpenIDConnect.prototype.token = function () {
                       }
                     });
                   }
-                }, 1000 * 3600 * 5); //5 hours
+                }, self.options.refreshDuration);
 
                 var d = Math.round(new Date().getTime() / 1000);
                 var id_token = {
@@ -731,16 +734,16 @@ OpenIDConnect.prototype.token = function () {
 
                 var signedIdToken = new jsjws.JWS().generateJWSByKey({alg: 'RS256'}, id_token, self.idTokenKey);
                 db.accesses.create({
-                  token: access,
-                  type: 'Bearer',
-                  expiresIn: 3600,
-                  user: prev.user || null,
-                  client: prev.client.id,
-                  idToken: signedIdToken,
-                  scopes: prev.scopes,
-                  auth: prev.auth ? prev.auth.id : null
-                },
-                function (err, access) {
+                    token: access,
+                    type: 'Bearer',
+                    expiresIn: 3600,
+                    user: prev.user || null,
+                    client: prev.client.id,
+                    idToken: signedIdToken,
+                    scopes: prev.scopes,
+                    auth: prev.auth ? prev.auth.id : null
+                  },
+                  function (err, access) {
                     if (!err && access) {
                       if (prev.auth) {
                         prev.auth.status = 'used';
@@ -756,7 +759,7 @@ OpenIDConnect.prototype.token = function () {
                             }
                           });
                         }
-                      }, 1000 * 3600); //1 hour
+                      }, self.options.accessDuration);
 
                       res.json({
                         access_token: access.token,
@@ -819,38 +822,38 @@ OpenIDConnect.prototype.check = function () {
         }
         if (params.access_token) {
           db.accesses.getByToken(params.access_token, function (err, access) {
-              if (!err && access) {
-                var errors = [];
+            if (!err && access) {
+              var errors = [];
 
-                scopes.forEach(function (scope) {
-                  if (typeof scope == 'string') {
-                    if (access.scopes.indexOf(scope) == -1) {
-                      errors.push(scope);
-                    }
-                  } else if (util.isRegExp(scope)) {
-                    var inS = false;
-                    access.scopes.forEach(function (s) {
-                      if (scope.test(s)) {
-                        inS = true;
-                      }
-                    });
-                    !inS && errors.push('(' + scope.toString().replace(/\//g, '') + ')');
+              scopes.forEach(function (scope) {
+                if (typeof scope == 'string') {
+                  if (access.scopes.indexOf(scope) == -1) {
+                    errors.push(scope);
                   }
-                });
-                if (errors.length > 1) {
-                  var last = errors.pop();
-                  self.errorHandle(res, null, 'invalid_scope', 'Required scopes ' + errors.join(', ') + ' and ' + last + ' where not granted.');
-                } else if (errors.length > 0) {
-                  self.errorHandle(res, null, 'invalid_scope', 'Required scope ' + errors.pop() + ' not granted.');
-                } else {
-                  req.check = req.check || {};
-                  req.check.scopes = access.scopes;
-                  next();
+                } else if (util.isRegExp(scope)) {
+                  var inS = false;
+                  access.scopes.forEach(function (s) {
+                    if (scope.test(s)) {
+                      inS = true;
+                    }
+                  });
+                  !inS && errors.push('(' + scope.toString().replace(/\//g, '') + ')');
                 }
+              });
+              if (errors.length > 1) {
+                var last = errors.pop();
+                self.errorHandle(res, null, 'invalid_scope', 'Required scopes ' + errors.join(', ') + ' and ' + last + ' where not granted.');
+              } else if (errors.length > 0) {
+                self.errorHandle(res, null, 'invalid_scope', 'Required scope ' + errors.pop() + ' not granted.');
               } else {
-                self.errorHandle(res, null, 'unauthorized_client', 'Access token is not valid.');
+                req.check = req.check || {};
+                req.check.scopes = access.scopes;
+                next();
               }
-            });
+            } else {
+              self.errorHandle(res, null, 'unauthorized_client', 'Access token is not valid.');
+            }
+          });
         } else {
           self.errorHandle(res, null, 'unauthorized_client', 'No access token found.');
         }
@@ -935,30 +938,30 @@ OpenIDConnect.prototype.removetokens = function () {
       if (params.access_token) {
         //Delete the provided access token, and other tokens issued to the user
         db.accesses.getByToken(params.access_token, function (err, access) {
-            if (!err && access) {
-              db.auths.getByUser(access.user, function (err, auth) {
-                  if (!err && auth) {
-                    auth.accessTokens.forEach(function (access) {
-                      db.accesses.destroy(access, function (err) { console.log(err); });
-                    });
-                    auth.refreshTokens.forEach(function (refresh) {
-                      db.refreshes.destroy(refresh, function (err) { console.log(err); });
-                    });
-                    db.auths.destroy(auth, function (err) { console.log(err); });
-                  }
-                  db.accesses.getByUser(access.user, function (err, accesses) {
-                      if (!err && accesses) {
-                        accesses.forEach(function (access) {
-                          db.accesses.destroy(access, function (err) { console.log(err); });
-                        });
-                      }
-                      return next();
-                    });
+          if (!err && access) {
+            db.auths.getByUser(access.user, function (err, auth) {
+              if (!err && auth) {
+                auth.accessTokens.forEach(function (access) {
+                  db.accesses.destroy(access, function (err) { console.log(err); });
                 });
-            } else {
-              self.errorHandle(res, null, 'unauthorized_client', 'Access token is not valid.');
-            }
-          });
+                auth.refreshTokens.forEach(function (refresh) {
+                  db.refreshes.destroy(refresh, function (err) { console.log(err); });
+                });
+                db.auths.destroy(auth, function (err) { console.log(err); });
+              }
+              db.accesses.getByUser(access.user, function (err, accesses) {
+                if (!err && accesses) {
+                  accesses.forEach(function (access) {
+                    db.accesses.destroy(access, function (err) { console.log(err); });
+                  });
+                }
+                return next();
+              });
+            });
+          } else {
+            self.errorHandle(res, null, 'unauthorized_client', 'Access token is not valid.');
+          }
+        });
       } else {
         self.errorHandle(res, null, 'unauthorized_client', 'No access token found.');
       }

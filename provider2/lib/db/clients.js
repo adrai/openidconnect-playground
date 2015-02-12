@@ -85,9 +85,9 @@ module.exports = {
       return callback(new Error('Please define a name!'));
     }
 
-    if (!data.redirect_uris || data.redirect_uris.length === 0) {
-      return callback(new Error('Please define redirect_uris!'));
-    }
+    //if (!data.redirect_uris || data.redirect_uris.length === 0) {
+    //  return callback(new Error('Please define redirect_uris!'));
+    //}
 
     if (data.id) {
       repo.get(data.id, function (err, vm) {
