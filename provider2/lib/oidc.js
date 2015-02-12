@@ -939,7 +939,7 @@ OpenIDConnect.prototype.removetokens = function () {
         //Delete the provided access token, and other tokens issued to the user
         db.accesses.getByToken(accToken, function (err, access) {
           if (!err && access) {
-            db.auths.findByUser(access.user, function (err, auth) {
+            db.auths.getByUser(access.user, function (err, auth) {
               if (!err && auth) {
                 auth.accessTokens.forEach(function (access) {
                   db.accesses.destroy(access, function (err) { console.log(err); });
