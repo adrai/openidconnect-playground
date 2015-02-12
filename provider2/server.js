@@ -169,7 +169,7 @@ repository.init({ type: 'inmemory' }, function (err) {
   app.post('/token', oidc.token());
 
   //user consent form
-  app.get('/user/consent', oidc.loggedIn, function(req, res, next) {
+  app.get('/user/consent', oidc.ensureLoggedIn(), function(req, res, next) {
     var head = '<head><title>Consent</title></head>';
     var lis = [];
     for(var i in req.session.scopes) {
@@ -357,7 +357,7 @@ repository.init({ type: 'inmemory' }, function (err) {
     });
   });
 
-  app.get('/client', oidc.loggedIn, function(req, res, next){
+  app.get('/client', oidc.ensureLoggedIn(), function(req, res, next){
     var head ='<h1>Clients Page</h1><div><a href="/client/register"/>Register new client</a></div>';
     db.clients.findByUser(req.session.user, function(err, clients){
       var body = ["<ul>"];

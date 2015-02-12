@@ -60,13 +60,15 @@ function OpenIDConnect(options) {
   this.settings.scopes = _.defaults(options.scopes, defaults.scopes);
 
   var self = this;
-  this.loggedIn = function (req, res, next) {
-    if (req.session.user) {
-      next();
-    } else {
-      var q = req.parsedParams ? req.path + '?' + querystring.stringify(req.parsedParams) : req.originalUrl;
-      res.redirect(self.settings.login_url + '?' + querystring.stringify({return_url: q}));
-    }
+  this.ensureLoggedIn = function () {
+    return function (req, res, next) {
+      if (req.session.user) {
+        next();
+      } else {
+        var q = req.parsedParams ? req.path + '?' + querystring.stringify(req.parsedParams) : req.originalUrl;
+        res.redirect(self.settings.login_url + '?' + querystring.stringify({return_url: q}));
+      }
+    };
   };
 
   this.idTokenKey = getKey(path.join(__dirname, '../../anvil/keys/private.pem'));
@@ -215,7 +217,7 @@ OpenIDConnect.prototype.auth = function () {
     function (req, res, next) {
       self.endpointParams(spec, req, res, next);
     },
-    this.loggedIn,
+    this.ensureLoggedIn(),
     function (req, res, next) {
       var params = req.parsedParams;
       async.waterfall([
