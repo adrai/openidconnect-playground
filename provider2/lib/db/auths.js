@@ -120,7 +120,7 @@ module.exports = {
 
       vm.destroy();
 
-      repo.commit(vm, function (err, vm) {
+      repo.commit(vm, function (err) {
         if (err) {
           return callback(err);
         }
