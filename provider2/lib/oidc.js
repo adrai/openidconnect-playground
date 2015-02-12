@@ -873,7 +873,8 @@ OpenIDConnect.prototype.check = function () {
  *
  * This function returns the user info in a json object. Checks for scope and login are included.
  */
-OpenIDConnect.prototype.userInfoByAccessToken = function () {
+OpenIDConnect.prototype.userInfo = function () {
+  var self = this;
   return [
     function (req, res, next) {
       if (!req.params.access_token) {
@@ -884,16 +885,12 @@ OpenIDConnect.prototype.userInfoByAccessToken = function () {
           req.session.user = access.user;
           next();
         });
+      } else if (req.session.user) {
+        next();
       } else {
         res.send(400, 'No AccessToken!');
       }
-    }
-  ].concat(this.userInfo());
-};
-
-OpenIDConnect.prototype.userInfo = function () {
-  var self = this;
-  return [
+    },
     self.check('openid', /profile|email/),
     function (req, res, next) {
       db.users.getById(req.session.user, function (err, user) {

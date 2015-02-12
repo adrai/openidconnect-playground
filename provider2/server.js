@@ -267,7 +267,7 @@ repository.init({ type: 'inmemory' }, function (err) {
   });
 
   //User Info Endpoint
-  app.get('/userinfo', oidc.userInfoByAccessToken());
+  app.get('/userinfo', oidc.userInfo());
   app.get('/api/userinfo', oidc.userInfo());
 
   app.get('/user/foo', oidc.check('foo'), function(req, res, next){
