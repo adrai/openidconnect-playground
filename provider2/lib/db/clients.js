@@ -68,7 +68,7 @@ module.exports = {
     });
   },
 
-  create: function (data, callback) {
+  create: function (data, callback, ignoreExisting) {
     if (!data.id && !data.key) {
       return callback(new Error('Please pass in an id or a key!'));
     }
@@ -85,9 +85,9 @@ module.exports = {
       return callback(new Error('Please define a name!'));
     }
 
-    //if (!data.redirect_uris || data.redirect_uris.length === 0) {
-    //  return callback(new Error('Please define redirect_uris!'));
-    //}
+    // if (!data.redirect_uris || data.redirect_uris.length === 0) {
+    //   return callback(new Error('Please define redirect_uris!'));
+    // }
 
     if (data.id) {
       repo.get(data.id, function (err, vm) {
@@ -95,7 +95,7 @@ module.exports = {
           return callback(err);
         }
 
-        if (vm.actionOnCommit !== 'create') {
+        if (!ignoreExisting && vm.actionOnCommit !== 'create') {
           return callback(new Error('Passed id already existing!'));
         }
 
@@ -114,7 +114,7 @@ module.exports = {
           return callback(err);
         }
 
-        if (vms.length > 0) {
+        if (!ignoreExisting && vms.length > 0) {
           return callback(new Error('Client already existing!'));
         }
 
@@ -134,6 +134,10 @@ module.exports = {
         });
       });
     }
+  },
+
+  update: function (data, callback) {
+    this.create(data, callback, true);
   }
 
 };
